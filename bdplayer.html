@@ -1,0 +1,1947 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>BDPLAYER</title>
+<meta name="description" content="BDPLAYER — a sleek, offline-capable audio player with a 5-band equalizer, bass boost and reverb, that stores your music locally in the browser.">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<!-- iOS PWA / full-screen support -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BDPLAYER">
+<meta name="format-detection" content="telephone=no">
+<style>
+:root{
+  --bg:#000000;
+  --bg-elevated:#0a0a0a;
+  --bg-card:#121212;
+  --bg-hover:#242424;
+  --text-primary:#ffffff;
+  --text-secondary:#b3b3b3;
+  --text-tertiary:#727272;
+  --accent:#1db954;
+  --accent-hover:#1ed760;
+  --accent-dark:#12833c;
+  --accent-rgb:29,185,84;
+  --accent-contrast:#04220f;
+  --danger:#f15e6c;
+  --border:rgba(255,255,255,0.08);
+  --player-height:90px;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;}
+body{
+  background:var(--bg);
+  color:var(--text-primary);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+#app{
+  display:flex;
+  flex-direction:column;
+  height:100dvh;
+  height:100vh;
+}
+::-webkit-scrollbar{width:10px;height:10px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:#3a3a3a;border-radius:5px;}
+::-webkit-scrollbar-thumb:hover{background:#4f4f4f;}
+
+/* ---------- iOS install banner ---------- */
+.ios-install-banner{
+  background:var(--accent);
+  color:var(--accent-contrast);
+  font-size:13px;
+  font-weight:600;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:8px 14px;
+  padding-top:calc(8px + env(safe-area-inset-top));
+  z-index:70;
+}
+.ios-install-banner button{
+  background:none;border:none;color:var(--accent-contrast);font-size:16px;font-weight:700;cursor:pointer;line-height:1;padding:4px;
+}
+
+/* ---------- Header ---------- */
+.app-header{
+  flex-shrink:0;
+  background:linear-gradient(180deg, rgba(var(--accent-rgb),0.15) 0%, var(--bg) 100%);
+  padding:calc(16px + env(safe-area-inset-top)) 20px 12px;
+  border-bottom:1px solid var(--border);
+  z-index:10;
+}
+.header-top{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:wrap;
+  margin-bottom:16px;
+}
+.brand{display:flex;align-items:center;gap:10px;}
+.brand-icon{width:28px;height:28px;color:var(--accent);flex-shrink:0;}
+.brand h1{font-size:20px;font-weight:800;letter-spacing:-0.3px;}
+.brand h1 span{color:var(--accent);}
+.header-actions{display:flex;gap:10px;flex-wrap:wrap;}
+.btn{
+  border:none;
+  border-radius:500px;
+  padding:10px 18px;
+  font-size:14px;
+  font-weight:700;
+  cursor:pointer;
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  transition:transform .1s ease, background .15s ease;
+  white-space:nowrap;
+  -webkit-touch-callout:none;
+  -webkit-user-select:none;
+  user-select:none;
+}
+.btn:active{transform:scale(0.96);}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.btn svg{width:16px;height:16px;}
+.btn-primary{background:var(--accent);color:var(--accent-contrast);}
+.btn-primary:hover{background:var(--accent-hover);}
+.btn-secondary{background:transparent;color:var(--text-primary);border:1px solid #5a5a5a;}
+.btn-secondary:hover{border-color:#fff;}
+.btn-text{background:none;color:var(--text-secondary);font-size:13px;font-weight:600;cursor:pointer;border:none;padding:6px 4px;}
+.btn-text:hover{color:var(--text-primary);text-decoration:underline;}
+.header-bottom{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+.search-wrap{
+  position:relative;
+  flex:1;
+  min-width:180px;
+  max-width:360px;
+}
+.search-wrap svg{
+  position:absolute;left:12px;top:50%;transform:translateY(-50%);
+  width:16px;height:16px;color:var(--text-tertiary);pointer-events:none;
+}
+.search-wrap input{
+  width:100%;
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  border-radius:500px;
+  color:var(--text-primary);
+  padding:9px 14px 9px 34px;
+  font-size:14px;
+  outline:none;
+  -webkit-appearance:none;
+}
+.search-wrap input:focus{border-color:var(--text-secondary);}
+.search-wrap input::placeholder{color:var(--text-tertiary);}
+.library-meta{display:flex;align-items:center;gap:14px;font-size:12px;color:var(--text-tertiary);white-space:nowrap;}
+
+/* ---------- Main content ---------- */
+.main-content{
+  flex:1;
+  overflow-y:auto;
+  padding:20px 20px calc(var(--player-height) + 24px);
+  position:relative;
+}
+.empty-state{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  padding:60px 20px;
+  color:var(--text-secondary);
+  max-width:400px;
+  margin:0 auto;
+}
+.empty-state svg{width:56px;height:56px;color:var(--text-tertiary);margin-bottom:20px;}
+.empty-state h2{font-size:20px;color:var(--text-primary);margin-bottom:8px;}
+.empty-state p{font-size:14px;line-height:1.5;margin-bottom:22px;}
+
+.track-list-header{
+  display:grid;
+  grid-template-columns:32px 1fr auto 40px;
+  gap:12px;
+  padding:0 12px 10px;
+  border-bottom:1px solid var(--border);
+  margin-bottom:6px;
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:0.6px;
+  color:var(--text-tertiary);
+  font-weight:600;
+}
+.no-results{padding:40px 12px;text-align:center;color:var(--text-tertiary);font-size:14px;}
+
+.track-row{
+  display:grid;
+  grid-template-columns:32px 1fr auto 40px;
+  gap:12px;
+  align-items:center;
+  padding:8px 12px;
+  border-radius:6px;
+  cursor:pointer;
+  transition:background .1s ease;
+}
+.track-row:hover{background:var(--bg-hover);}
+.track-row.active .t-title{color:var(--accent);}
+.track-num{
+  position:relative;
+  width:20px;height:20px;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--text-tertiary);
+  font-size:14px;
+}
+.num-text{display:inline-block;}
+.play-icon-hover{display:none;width:14px;height:14px;color:var(--text-primary);}
+.track-row:hover .num-text{display:none;}
+.track-row:hover .play-icon-hover{display:inline-block;}
+.track-row.playing:hover .play-icon-hover{display:none;}
+.eq-bars{display:none;align-items:flex-end;gap:2px;height:14px;}
+.track-row.playing .eq-bars{display:inline-flex;}
+.track-row.playing .num-text{display:none;}
+.track-row.playing:hover .num-text{display:none;}
+.eq-bars span{width:3px;background:var(--accent);animation:eq 0.9s ease-in-out infinite;border-radius:1px;}
+.eq-bars span:nth-child(1){animation-delay:-0.8s;}
+.eq-bars span:nth-child(2){animation-delay:-0.4s;}
+.eq-bars span:nth-child(3){animation-delay:-0.15s;}
+@keyframes eq{0%,100%{height:3px;}50%{height:14px;}}
+
+.track-info{display:flex;flex-direction:column;min-width:0;gap:2px;}
+.t-title{font-size:14px;font-weight:500;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.t-artist{font-size:12px;color:var(--text-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.t-duration{font-size:13px;color:var(--text-tertiary);font-variant-numeric:tabular-nums;}
+.btn-delete{
+  background:none;border:none;color:var(--text-tertiary);cursor:pointer;
+  width:32px;height:32px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;transition:opacity .1s ease, background .1s ease, color .1s ease;
+}
+.track-row:hover .btn-delete{opacity:1;}
+.btn-delete:hover{background:var(--bg-elevated);color:var(--danger);}
+.btn-delete svg{width:16px;height:16px;}
+
+/* ---------- Drop overlay ---------- */
+.drop-overlay{
+  position:fixed;inset:0;
+  background:rgba(0,0,0,0.85);
+  display:flex;align-items:center;justify-content:center;
+  z-index:50;
+  opacity:0;pointer-events:none;
+  transition:opacity .15s ease;
+}
+.drop-overlay.active{opacity:1;pointer-events:all;}
+.drop-overlay p{
+  border:2px dashed var(--accent);
+  border-radius:16px;
+  padding:60px 80px;
+  font-size:18px;
+  font-weight:700;
+  color:var(--accent);
+}
+
+/* ---------- Player bar ---------- */
+.player-bar{
+  position:fixed;left:0;right:0;bottom:0;
+  background:var(--bg-card);
+  border-top:1px solid var(--border);
+  display:grid;
+  grid-template-columns:minmax(120px,1fr) minmax(220px,2.5fr) minmax(0,1fr);
+  align-items:center;
+  column-gap:16px;
+  height:var(--player-height);
+  padding:0 16px calc(0px + env(safe-area-inset-bottom));
+  z-index:20;
+}
+.player-track-info{display:flex;align-items:center;gap:12px;min-width:0;}
+.track-art{
+  width:48px;height:48px;border-radius:4px;flex-shrink:0;
+  background:linear-gradient(135deg,var(--accent),var(--accent-dark));
+  display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:18px;color:var(--accent-contrast);
+}
+.track-text{min-width:0;}
+.track-title{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.track-artist{font-size:12px;color:var(--text-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+.player-controls{display:flex;flex-direction:column;align-items:center;gap:6px;width:100%;max-width:600px;margin:0 auto;}
+.control-buttons{display:flex;align-items:center;justify-content:center;gap:18px;}
+.icon-btn{
+  background:none;border:none;color:var(--text-secondary);cursor:pointer;
+  width:34px;height:34px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  transition:color .1s ease, transform .1s ease;
+}
+.icon-btn svg{width:18px;height:18px;}
+.icon-btn:hover{color:var(--text-primary);}
+.icon-btn:active{transform:scale(0.92);}
+.icon-btn.active{color:var(--accent);}
+.play-btn{
+  background:var(--text-primary);color:#000;width:34px;height:34px;
+}
+.play-btn:hover{transform:scale(1.06);background:var(--text-primary);}
+.play-btn svg{width:16px;height:16px;}
+
+.seek-row{display:flex;align-items:center;gap:8px;width:100%;}
+.seek-row span{font-size:11px;color:var(--text-tertiary);font-variant-numeric:tabular-nums;min-width:34px;text-align:center;}
+
+.player-extra{display:flex;align-items:center;justify-content:flex-end;gap:8px;}
+.player-extra input[type=range]{width:100px;}
+
+input[type=range]{
+  -webkit-appearance:none;appearance:none;
+  height:4px;border-radius:2px;flex:1;
+  background:linear-gradient(to right, var(--accent) 0%, var(--accent) var(--pct,0%), #4d4d4d var(--pct,0%), #4d4d4d 100%);
+  outline:none;cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:12px;height:12px;border-radius:50%;
+  background:#fff;opacity:0;transition:opacity .1s ease;
+}
+input[type=range]:hover::-webkit-slider-thumb,
+input[type=range]:active::-webkit-slider-thumb{opacity:1;}
+input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:#fff;border:none;opacity:0;}
+input[type=range]:hover::-moz-range-thumb{opacity:1;}
+input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:#4d4d4d;}
+
+/* ---------- Toast ---------- */
+.toast{
+  position:fixed;
+  left:50%;bottom:calc(var(--player-height) + 16px);
+  transform:translate(-50%, 12px);
+  background:#282828;
+  color:var(--text-primary);
+  padding:12px 20px;
+  border-radius:8px;
+  font-size:13px;
+  font-weight:600;
+  box-shadow:0 8px 24px rgba(0,0,0,0.4);
+  opacity:0;pointer-events:none;
+  transition:opacity .2s ease, transform .2s ease;
+  z-index:60;
+  max-width:80vw;
+  text-align:center;
+}
+.toast.show{opacity:1;transform:translate(-50%,0);}
+.toast.error{border:1px solid var(--danger);color:#ffb4bb;}
+
+/* ---------- Settings Modal ---------- */
+.modal-overlay{
+  position:fixed;inset:0;
+  background:rgba(0,0,0,0.7);
+  backdrop-filter:blur(4px);
+  -webkit-backdrop-filter:blur(4px);
+  display:flex;align-items:center;justify-content:center;
+  z-index:80;
+  padding:20px;
+}
+.modal-overlay[hidden]{display:none;}
+.modal-panel{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  border-radius:16px;
+  width:100%;
+  max-width:480px;
+  max-height:85vh;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  box-shadow:0 20px 60px rgba(0,0,0,0.6);
+}
+.modal-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:18px 20px;
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+.modal-header h2{font-size:17px;font-weight:800;}
+.modal-close{
+  background:none;border:none;color:var(--text-secondary);cursor:pointer;
+  width:32px;height:32px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+}
+.modal-close:hover{background:var(--bg-hover);color:var(--text-primary);}
+.modal-close svg{width:18px;height:18px;}
+.modal-tabs{
+  display:flex;
+  padding:12px 20px 0;
+  flex-shrink:0;
+  border-bottom:1px solid var(--border);
+}
+.modal-tab{
+  background:none;border:none;color:var(--text-secondary);
+  font-size:13px;font-weight:700;
+  padding:10px 4px 12px;
+  cursor:pointer;
+  position:relative;
+  margin-right:22px;
+}
+.modal-tab.active{color:var(--text-primary);}
+.modal-tab.active::after{
+  content:'';position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--accent);border-radius:2px;
+}
+.modal-body{
+  padding:20px;
+  overflow-y:auto;
+}
+.tab-panel[hidden]{display:none;}
+.settings-section{margin-bottom:26px;}
+.settings-section:last-child{margin-bottom:4px;}
+.settings-row{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:12px;
+  gap:12px;
+}
+.settings-row label{font-size:14px;font-weight:600;color:var(--text-primary);}
+.settings-section input[type=range]{width:100%;margin-top:4px;}
+.settings-hint{font-size:12px;color:var(--text-tertiary);text-align:right;margin-top:4px;}
+.settings-note{
+  background:rgba(241,94,108,0.12);
+  border:1px solid rgba(241,94,108,0.3);
+  color:#ffb4bb;
+  font-size:12px;
+  line-height:1.5;
+  padding:10px 12px;
+  border-radius:8px;
+  margin-bottom:18px;
+}
+
+.eq-sliders{
+  display:flex;justify-content:space-between;gap:6px;
+  background:var(--bg-elevated);
+  border-radius:10px;
+  padding:20px 10px 14px;
+}
+.eq-band{display:flex;flex-direction:column;align-items:center;gap:8px;flex:1;min-width:0;}
+.eq-value{font-size:11px;color:var(--text-tertiary);font-variant-numeric:tabular-nums;min-height:14px;}
+.eq-band-slider-wrap{
+  height:110px;width:100%;
+  display:flex;align-items:center;justify-content:center;
+  position:relative;
+}
+.eq-band-slider-wrap::after{
+  content:'';position:absolute;left:2px;right:2px;top:50%;
+  height:1px;background:rgba(255,255,255,0.18);
+  pointer-events:none;
+}
+.eq-range{width:100px;transform:rotate(-90deg);margin:0;}
+.eq-freq{font-size:10px;color:var(--text-tertiary);font-weight:600;white-space:nowrap;}
+
+/* toggle switch */
+.switch{position:relative;display:inline-block;width:42px;height:24px;flex-shrink:0;}
+.switch input{opacity:0;width:0;height:0;position:absolute;}
+.switch-slider{
+  position:absolute;inset:0;cursor:pointer;
+  background:#4d4d4d;border-radius:24px;
+  transition:background .15s ease;
+}
+.switch-slider::before{
+  content:'';position:absolute;height:18px;width:18px;left:3px;top:3px;
+  background:#fff;border-radius:50%;
+  transition:transform .15s ease;
+}
+.switch input:checked + .switch-slider{background:var(--accent);}
+.switch input:checked + .switch-slider::before{transform:translateX(18px);}
+
+.theme-swatches{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;}
+.theme-swatch{
+  width:52px;height:52px;border-radius:50%;
+  border:2px solid transparent;
+  cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:transform .1s ease, border-color .15s ease;
+  flex-shrink:0;
+}
+.theme-swatch:hover{transform:scale(1.06);}
+.theme-swatch .swatch-check{width:20px;height:20px;color:var(--accent-contrast);opacity:0;transition:opacity .1s ease;}
+.theme-swatch.active{border-color:#fff;}
+.theme-swatch.active .swatch-check{opacity:1;}
+.theme-name-hint{font-size:11px;color:var(--text-tertiary);margin-top:12px;line-height:1.5;}
+
+/* ---------- Responsive ---------- */
+@media (max-width:768px){
+  .player-bar{
+    grid-template-columns:1fr;
+    row-gap:6px;
+    height:auto;
+    padding:8px 12px calc(8px + env(safe-area-inset-bottom));
+  }
+  .player-extra{display:none;}
+  .main-content{padding-bottom:calc(180px + env(safe-area-inset-bottom));}
+  .header-top{margin-bottom:12px;}
+}
+@media (max-width:480px){
+  .track-list-header,.track-row{grid-template-columns:28px 1fr 40px;}
+  .track-list-header span:nth-child(3),
+  .t-duration{display:none;}
+  .app-header{padding-left:14px;padding-right:14px;}
+  .main-content{padding-left:14px;padding-right:14px;}
+  .eq-band-slider-wrap{height:90px;}
+  .eq-range{width:80px;}
+  .modal-panel{max-height:90vh;}
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="ios-install-banner" id="iosInstallBanner" hidden>
+    <span>Install this app: tap <strong>Share</strong> → <strong>Add to Home Screen</strong> for offline use.</span>
+    <button id="iosInstallDismiss" aria-label="Dismiss">✕</button>
+  </div>
+
+  <header class="app-header">
+    <div class="header-top">
+      <div class="brand">
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        <h1>BD<span>PLAYER</span></h1>
+      </div>
+      <div class="header-actions">
+        <button id="btnInstall" class="btn btn-secondary" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Install App
+        </button>
+        <button id="btnSettings" class="btn btn-secondary" title="Sound &amp; Theme Settings" aria-label="Sound and theme settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+          Settings
+        </button>
+        <!-- Add Folder trigger: native <label for> binding, NOT a JS .click() proxy -->
+        <label id="btnAddFolder" for="folderInput" class="btn btn-secondary" tabindex="0" role="button" aria-label="Add folder">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          Add Folder
+        </label>
+        <!-- Add Music trigger: native <label for> binding, NOT a JS .click() proxy -->
+        <label id="btnAddFiles" for="fileInput" class="btn btn-primary" tabindex="0" role="button" aria-label="Add music">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add Music
+        </label>
+      </div>
+    </div>
+    <div class="header-bottom">
+      <div class="search-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" id="searchInput" placeholder="Search your library" autocomplete="off">
+      </div>
+      <div class="library-meta">
+        <span id="trackCount">0 tracks</span>
+        <span id="storageInfo"></span>
+        <button id="btnClearAll" class="btn-text">Clear all</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-content" id="mainContent">
+    <div class="empty-state" id="emptyState">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      <h2>Your library is empty</h2>
+      <p>Add music files or an entire folder to get started. Everything is stored locally in your browser and works completely offline — even after closing the app.</p>
+      <!-- Add Music (empty state) trigger: native <label for> binding -->
+      <label id="btnAddFilesEmpty" for="fileInput" class="btn btn-primary" tabindex="0" role="button" aria-label="Add music">Add Music</label>
+    </div>
+    <div class="track-list" id="trackList" hidden>
+      <div class="track-list-header">
+        <span>#</span><span>Title</span><span>Duration</span><span></span>
+      </div>
+      <div id="trackListBody"></div>
+    </div>
+  </main>
+
+  <footer class="player-bar" id="playerBar">
+    <div class="player-track-info">
+      <div class="track-art" id="nowPlayingArt">♪</div>
+      <div class="track-text">
+        <div class="track-title" id="nowPlayingTitle">No track selected</div>
+        <div class="track-artist" id="nowPlayingArtist">—</div>
+      </div>
+    </div>
+
+    <div class="player-controls">
+      <div class="control-buttons">
+        <button class="icon-btn" id="btnShuffle" title="Shuffle" aria-label="Shuffle">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+        </button>
+        <button class="icon-btn" id="btnPrev" title="Previous" aria-label="Previous track">
+          <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zM18 6l-8.5 6L18 18V6z"/></svg>
+        </button>
+        <button class="icon-btn play-btn" id="btnPlayPause" title="Play" aria-label="Play">
+          <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <button class="icon-btn" id="btnNext" title="Next" aria-label="Next track">
+          <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6h2v12h-2z"/></svg>
+        </button>
+        <button class="icon-btn" id="btnRepeat" title="Repeat" aria-label="Repeat" data-mode="off">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+        </button>
+      </div>
+      <div class="seek-row">
+        <span id="currentTimeLabel">0:00</span>
+        <input type="range" id="seekBar" min="0" max="100" value="0" step="0.1" aria-label="Seek">
+        <span id="durationLabel">0:00</span>
+      </div>
+    </div>
+
+    <div class="player-extra">
+      <button class="icon-btn" id="btnVolumeIcon" title="Mute" aria-label="Mute">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+      </button>
+      <input type="range" id="volumeBar" min="0" max="100" value="80" aria-label="Volume">
+    </div>
+  </footer>
+
+  <div class="drop-overlay" id="dropOverlay"><p>Drop audio files to add them</p></div>
+  <div class="toast" id="toast"></div>
+
+  <!-- Settings Modal: Sound (EQ / Bass / Reverb) + Appearance (Theme) -->
+  <div class="modal-overlay" id="settingsModal" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="modal-header">
+        <h2 id="settingsTitle">Settings</h2>
+        <button class="modal-close" id="btnCloseSettings" aria-label="Close settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-tabs">
+        <button class="modal-tab active" data-tab="sound">Sound</button>
+        <button class="modal-tab" data-tab="appearance">Appearance</button>
+      </div>
+      <div class="modal-body">
+
+        <section class="tab-panel" data-panel="sound">
+          <div class="settings-note" id="soundUnavailableNote" hidden>Advanced audio effects aren't supported in this browser — playback will continue normally without them.</div>
+
+          <div class="settings-section">
+            <div class="settings-row">
+              <label>5-Band Equalizer</label>
+              <button class="btn-text" id="btnResetEQ">Reset</button>
+            </div>
+            <div class="eq-sliders" id="eqSliders"></div>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-row">
+              <label for="bassToggle">Bass Boost</label>
+              <label class="switch">
+                <input type="checkbox" id="bassToggle">
+                <span class="switch-slider"></span>
+              </label>
+            </div>
+            <input type="range" id="bassSlider" min="0" max="12" step="0.5" value="6">
+            <div class="settings-hint" id="bassValueLabel">+6.0 dB</div>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-row">
+              <label for="reverbToggle">Reverb / 3D Soundstage</label>
+              <label class="switch">
+                <input type="checkbox" id="reverbToggle">
+                <span class="switch-slider"></span>
+              </label>
+            </div>
+            <input type="range" id="reverbSlider" min="0" max="100" step="1" value="35">
+            <div class="settings-hint" id="reverbValueLabel">35%</div>
+          </div>
+        </section>
+
+        <section class="tab-panel" data-panel="appearance" hidden>
+          <div class="settings-section">
+            <label>Accent Color</label>
+            <div class="theme-swatches" id="themeSwatches"></div>
+            <p class="theme-name-hint" id="themeNameHint"></p>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="fileInput" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac,.aac,.opus,.webm" multiple hidden>
+  <input type="file" id="folderInput" webkitdirectory directory multiple hidden>
+</div>
+
+<script>
+'use strict';
+
+/* =========================================================
+   SAFE STORAGE WRAPPER
+   Opaque-origin contexts (data:, blob:, some sandboxed
+   iframes/WebViews) can throw a SecurityError on ANY
+   localStorage access. An uncaught throw at the top level
+   of this script would stop every line below it from
+   running — including every addEventListener call. Every
+   localStorage touch in this app goes through this wrapper
+   so that scenario can no longer happen.
+   ========================================================= */
+const safeStorage = {
+  get(key, fallback){
+    try {
+      const v = localStorage.getItem(key);
+      return v === null || v === undefined ? fallback : v;
+    } catch (e) {
+      return fallback;
+    }
+  },
+  set(key, value){
+    try { localStorage.setItem(key, value); return true; }
+    catch (e) { return false; }
+  }
+};
+
+/* =========================================================
+   ICON CONSTANTS
+   ========================================================= */
+const playIconSVG   = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+const pauseIconSVG  = '<svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
+const volume2IconSVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
+const muteIconSVG   = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>';
+const trashIconSVG  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>';
+const playHoverSVG  = '<svg viewBox="0 0 24 24" class="play-icon-hover" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+const eqBarsSVG      = '<span class="eq-bars"><span></span><span></span><span></span></span>';
+const repeatOffIconSVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>';
+const repeatOneIconSVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/><text x="12" y="14.5" font-size="7" fill="currentColor" stroke="none" text-anchor="middle" font-family="sans-serif" font-weight="bold">1</text></svg>';
+const checkIconSVG = '<svg class="swatch-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+
+/* =========================================================
+   STATE
+   ========================================================= */
+let db = null;
+let tracks = [];          // {id, name, title, artist, size, type, duration, blobUrl}
+let currentIndex = -1;
+let isPlaying = false;
+let shuffle = false;
+let repeatMode = 'off';   // off | all | one
+let lastVolume = 80;
+let rafId = null;
+let isSeeking = false;
+const audio = new Audio();
+audio.preload = 'metadata';
+
+const DB_NAME = 'OfflineAudioPlayerDB';
+const DB_VERSION = 1;
+const STORE_NAME = 'tracks';
+
+/* =========================================================
+   ENVIRONMENT DETECTION (data:/blob: opaque origins)
+   Used only to skip the iOS "Add to Home Screen" suggestion
+   (installing a data: URL wouldn't produce a stable icon),
+   not to show any warning UI.
+   ========================================================= */
+const IS_OPAQUE_ORIGIN = location.protocol === 'data:' || location.protocol === 'blob:';
+
+/* =========================================================
+   COLOR / THEME UTILITIES
+   ========================================================= */
+function shadeColor(hex, percent){
+  hex = String(hex).replace('#','');
+  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+  let r = parseInt(hex.substring(0,2),16);
+  let g = parseInt(hex.substring(2,4),16);
+  let b = parseInt(hex.substring(4,6),16);
+  const apply = (c) => {
+    const v = percent >= 0 ? c + (percent/100) * (255 - c) : c + (percent/100) * c;
+    return Math.max(0, Math.min(255, Math.round(v)));
+  };
+  r = apply(r); g = apply(g); b = apply(b);
+  return '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('');
+}
+function hexToRgb(hex){
+  hex = String(hex).replace('#','');
+  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+  const r = parseInt(hex.substring(0,2),16);
+  const g = parseInt(hex.substring(2,4),16);
+  const b = parseInt(hex.substring(4,6),16);
+  return `${r},${g},${b}`;
+}
+
+const THEME_PRESETS = [
+  { id:'green',    name:'Spotify Green',  color:'#1db954' },
+  { id:'blue',     name:'Electric Blue',  color:'#38bdf8' },
+  { id:'neon',     name:'Neon Green',     color:'#39ff14' },
+  { id:'platinum', name:'Platinum',       color:'#e2e8f0' }
+];
+let currentAccent = safeStorage.get('accentColor', THEME_PRESETS[0].color);
+
+function applyAccentColor(hex, persist){
+  currentAccent = hex;
+  const root = document.documentElement.style;
+  root.setProperty('--accent', hex);
+  root.setProperty('--accent-hover', shadeColor(hex, 12));
+  root.setProperty('--accent-dark', shadeColor(hex, -35));
+  root.setProperty('--accent-rgb', hexToRgb(hex));
+  if (persist) {
+    safeStorage.set('accentColor', hex);
+    setupIconsAndManifest();
+  }
+  renderThemeSwatches();
+}
+function renderThemeSwatches(){
+  const container = document.getElementById('themeSwatches');
+  const hint = document.getElementById('themeNameHint');
+  if (!container) return;
+  container.innerHTML = '';
+  let activeName = '';
+  THEME_PRESETS.forEach(t => {
+    const isActive = t.color.toLowerCase() === currentAccent.toLowerCase();
+    if (isActive) activeName = t.name;
+    const btn = document.createElement('button');
+    btn.className = 'theme-swatch' + (isActive ? ' active' : '');
+    btn.style.background = t.color;
+    btn.title = t.name;
+    btn.setAttribute('aria-label', t.name);
+    btn.innerHTML = checkIconSVG;
+    btn.addEventListener('click', () => applyAccentColor(t.color, true));
+    container.appendChild(btn);
+  });
+  if (hint) hint.textContent = activeName ? `Current: ${activeName}` : '';
+}
+
+/* =========================================================
+   INDEXEDDB LAYER
+   ========================================================= */
+function openDB(){
+  return new Promise((resolve, reject) => {
+    if (!('indexedDB' in window)) { reject(new Error('IndexedDB not supported')); return; }
+    let req;
+    try {
+      req = indexedDB.open(DB_NAME, DB_VERSION);
+    } catch (err) {
+      // Opaque-origin contexts (e.g. data: URLs) can throw synchronously here
+      reject(err);
+      return;
+    }
+    req.onupgradeneeded = (e) => {
+      const database = e.target.result;
+      if (!database.objectStoreNames.contains(STORE_NAME)) {
+        const store = database.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+        store.createIndex('name', 'name', { unique: false });
+        store.createIndex('addedAt', 'addedAt', { unique: false });
+      }
+    };
+    req.onsuccess = (e) => resolve(e.target.result);
+    req.onerror = (e) => reject(e.target.error || new Error('IndexedDB open failed'));
+    req.onblocked = () => reject(new Error('IndexedDB open blocked'));
+  });
+}
+
+/* Retries opening IndexedDB a few times with a short backoff before
+   giving up. This helps in embedded/sandboxed WebViews where the
+   storage subsystem can be momentarily unavailable right at page
+   load, even though it works a moment later within the same origin
+   instance. It cannot make storage survive a brand-new data: URL
+   load — that boundary is enforced by the browser, not by timing. */
+async function openDBWithRetry(maxAttempts){
+  maxAttempts = maxAttempts || 3;
+  let lastErr = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await openDB();
+    } catch (err) {
+      lastErr = err;
+      if (attempt < maxAttempts) await new Promise(r => setTimeout(r, 200 * attempt));
+    }
+  }
+  throw lastErr;
+}
+
+function dbAdd(record){
+  return new Promise((resolve, reject) => {
+    try {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const req = tx.objectStore(STORE_NAME).add(record);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    } catch (err) { reject(err); }
+  });
+}
+/* Retries a single failed write once before the caller falls back
+   to a session-only (temp) track entry. */
+async function dbAddWithRetry(record){
+  try {
+    return await dbAdd(record);
+  } catch (err) {
+    console.warn('IndexedDB add failed, retrying once:', err);
+    await new Promise(r => setTimeout(r, 150));
+    return await dbAdd(record);
+  }
+}
+function dbGetAll(){
+  return new Promise((resolve, reject) => {
+    try {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const req = tx.objectStore(STORE_NAME).getAll();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    } catch (err) { reject(err); }
+  });
+}
+function dbDelete(id){
+  return new Promise((resolve, reject) => {
+    try {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    } catch (err) { reject(err); }
+  });
+}
+function dbClear(){
+  return new Promise((resolve, reject) => {
+    try {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    } catch (err) { reject(err); }
+  });
+}
+function dbUpdateDuration(id, duration){
+  return new Promise((resolve, reject) => {
+    try {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const getReq = store.get(id);
+      getReq.onsuccess = () => {
+        const rec = getReq.result;
+        if (rec) { rec.duration = duration; store.put(rec); }
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    } catch (err) { reject(err); }
+  });
+}
+
+/* =========================================================
+   UTILITIES
+   ========================================================= */
+function formatTime(sec){
+  if (!isFinite(sec) || sec < 0) sec = 0;
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+function escapeHtml(str){
+  return String(str || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function formatBytes(bytes){
+  if (!bytes) return '0 MB';
+  const mb = bytes / 1024 / 1024;
+  if (mb < 1024) return mb.toFixed(1) + ' MB';
+  return (mb / 1024).toFixed(2) + ' GB';
+}
+function parseFileName(filename){
+  const base = filename.replace(/\.[^/.]+$/, '');
+  if (base.includes(' - ')) {
+    const [a, ...rest] = base.split(' - ');
+    return { artist: a.trim() || 'Unknown Artist', title: rest.join(' - ').trim() || base };
+  }
+  return { artist: 'Unknown Artist', title: base };
+}
+function isAudioFile(file){
+  if (file.type && file.type.startsWith('audio/')) return true;
+  return /\.(mp3|m4a|wav|ogg|flac|aac|opus|webm)$/i.test(file.name);
+}
+function getAudioDuration(file){
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const tempAudio = new Audio();
+    tempAudio.preload = 'metadata';
+    tempAudio.onloadedmetadata = () => { resolve(tempAudio.duration); URL.revokeObjectURL(url); };
+    tempAudio.onerror = () => { URL.revokeObjectURL(url); reject(new Error('metadata error')); };
+    tempAudio.src = url;
+  });
+}
+let toastTimeout;
+function showToast(msg, isError){
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.className = 'toast show' + (isError ? ' error' : '');
+  clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => { toast.className = 'toast'; }, 3200);
+}
+
+/* =========================================================
+   ICON GENERATION (Canvas -> PNG data URIs, used for
+   favicon / apple-touch-icon / manifest / media session artwork)
+   ========================================================= */
+let appIconDataUrl192 = '';
+let appIconDataUrl512 = '';
+function roundRectPath(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function generateIcon(size){
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, size, size);
+  grad.addColorStop(0, shadeColor(currentAccent, 18));
+  grad.addColorStop(1, shadeColor(currentAccent, -30));
+  roundRectPath(ctx, 0, 0, size, size, size * 0.22);
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.fillStyle = '#04220f';
+  ctx.font = `bold ${Math.round(size * 0.5)}px -apple-system, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('♪', size / 2, size * 0.56);
+  return canvas.toDataURL('image/png');
+}
+function setLinkTag(rel, href){
+  try {
+    let link = document.querySelector(`link[rel="${rel}"]`);
+    if (!link) { link = document.createElement('link'); link.rel = rel; document.head.appendChild(link); }
+    link.href = href;
+  } catch (e) {}
+}
+function setupIconsAndManifest(){
+  try {
+    const icon180 = generateIcon(180);
+    const icon192 = generateIcon(192);
+    const icon512 = generateIcon(512);
+    appIconDataUrl192 = icon192;
+    appIconDataUrl512 = icon512;
+    setLinkTag('icon', icon192);
+    setLinkTag('apple-touch-icon', icon180);
+
+    const manifest = {
+      name: 'BDPLAYER',
+      short_name: 'BDPLAYER',
+      description: 'A sleek, offline-capable audio player with EQ, bass boost and reverb, that stores your music locally in the browser.',
+      start_url: '.',
+      scope: '.',
+      display: 'standalone',
+      background_color: '#000000',
+      theme_color: '#000000',
+      orientation: 'portrait-primary',
+      icons: [
+        { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+        { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+      ]
+    };
+    const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+    setLinkTag('manifest', URL.createObjectURL(manifestBlob));
+  } catch (err) {
+    console.warn('Icon/manifest setup failed:', err);
+  }
+}
+
+/* =========================================================
+   SERVICE WORKER (app-shell caching)
+   Requires a secure context (https or localhost); skipped
+   automatically under data:/blob:/file: — offline playback
+   itself does not depend on this, it runs through IndexedDB.
+   ========================================================= */
+function registerServiceWorker(){
+  if (!('serviceWorker' in navigator)) return;
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost') return;
+  const swSource = `
+    const CACHE = 'offline-audio-player-shell-v1';
+    self.addEventListener('install', () => self.skipWaiting());
+    self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+    self.addEventListener('fetch', (e) => {
+      if (e.request.method !== 'GET') return;
+      e.respondWith(
+        caches.open(CACHE).then(async (cache) => {
+          const cached = await cache.match(e.request);
+          const network = fetch(e.request).then((res) => {
+            if (res && res.ok) cache.put(e.request, res.clone());
+            return res;
+          }).catch(() => cached);
+          return cached || network;
+        })
+      );
+    });
+  `;
+  try {
+    const blob = new Blob([swSource], { type: 'text/javascript' });
+    navigator.serviceWorker.register(URL.createObjectURL(blob))
+      .catch(err => console.warn('SW registration failed (offline playback still works via IndexedDB):', err));
+  } catch (err) {
+    console.warn('Service worker unavailable:', err);
+  }
+}
+
+/* Requests persistent storage. Called at startup AND again after
+   the first successful track import — some browsers' heuristics
+   for granting persistence weigh actual site engagement/data
+   presence, so asking again once there's real data in IndexedDB
+   can succeed even if the very first request didn't. */
+async function requestPersistentStorage(){
+  if (navigator.storage && navigator.storage.persist) {
+    try { await navigator.storage.persist(); } catch (e) {}
+  }
+}
+async function updateStorageInfo(){
+  const el = document.getElementById('storageInfo');
+  if (!navigator.storage || !navigator.storage.estimate) { el.textContent = ''; return; }
+  try {
+    const { usage } = await navigator.storage.estimate();
+    el.textContent = formatBytes(usage) + ' used';
+  } catch (e) { el.textContent = ''; }
+}
+
+/* =========================================================
+   WEB AUDIO ENGINE — 5-band EQ, Bass Boost, Reverb / 3D
+   ========================================================= */
+const EQ_BANDS = [60, 230, 910, 4000, 14000];
+let audioCtx = null;
+let sourceNode = null;
+let eqFilters = [];
+let bassFilter = null;
+let convolver = null;
+let dryGain = null, wetGain = null, preWiden = null;
+let splitter = null, merger = null, widenDelay = null, widenWetGain = null;
+let audioGraphReady = false;
+let audioGraphFailed = false;
+
+let soundSettings = {
+  eq: [0, 0, 0, 0, 0],
+  bassEnabled: false,
+  bassGain: 6,
+  reverbEnabled: false,
+  reverbAmount: 35
+};
+function loadSoundSettings(){
+  try {
+    const saved = JSON.parse(safeStorage.get('soundSettings', 'null'));
+    if (saved) soundSettings = Object.assign({}, soundSettings, saved);
+  } catch (e) {}
+}
+function saveSoundSettings(){
+  try { safeStorage.set('soundSettings', JSON.stringify(soundSettings)); } catch (e) {}
+}
+
+function createImpulseResponse(ctx, duration, decay){
+  const rate = ctx.sampleRate;
+  const length = Math.max(1, Math.floor(rate * duration));
+  const impulse = ctx.createBuffer(2, length, rate);
+  for (let ch = 0; ch < 2; ch++) {
+    const data = impulse.getChannelData(ch);
+    for (let i = 0; i < length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+    }
+  }
+  return impulse;
+}
+
+function ensureAudioContext(){
+  if (audioGraphReady) {
+    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    return true;
+  }
+  if (audioGraphFailed) return false;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    sourceNode = audioCtx.createMediaElementSource(audio);
+
+    eqFilters = EQ_BANDS.map((freq, i) => {
+      const f = audioCtx.createBiquadFilter();
+      f.type = 'peaking';
+      f.frequency.value = freq;
+      f.Q.value = 1.1;
+      f.gain.value = soundSettings.eq[i] || 0;
+      return f;
+    });
+
+    bassFilter = audioCtx.createBiquadFilter();
+    bassFilter.type = 'lowshelf';
+    bassFilter.frequency.value = 150;
+    bassFilter.gain.value = soundSettings.bassEnabled ? soundSettings.bassGain : 0;
+
+    convolver = audioCtx.createConvolver();
+    convolver.buffer = createImpulseResponse(audioCtx, 2.4, 2.4);
+    convolver.normalize = true;
+
+    dryGain = audioCtx.createGain();
+    wetGain = audioCtx.createGain();
+    dryGain.gain.value = 1;
+    wetGain.gain.value = soundSettings.reverbEnabled ? (soundSettings.reverbAmount / 100) * 0.6 : 0;
+
+    preWiden = audioCtx.createGain();
+    splitter = audioCtx.createChannelSplitter(2);
+    merger = audioCtx.createChannelMerger(2);
+    widenDelay = audioCtx.createDelay(0.05);
+    widenDelay.delayTime.value = 0.018;
+    widenWetGain = audioCtx.createGain();
+    widenWetGain.gain.value = soundSettings.reverbEnabled ? (soundSettings.reverbAmount / 100) * 0.35 : 0;
+
+    // chain: source -> eq bands -> bass shelf -> [dry + reverb wet] -> stereo widen -> destination
+    let node = sourceNode;
+    eqFilters.forEach(f => { node.connect(f); node = f; });
+    node.connect(bassFilter);
+
+    bassFilter.connect(dryGain);
+    bassFilter.connect(convolver);
+    convolver.connect(wetGain);
+
+    dryGain.connect(preWiden);
+    wetGain.connect(preWiden);
+
+    preWiden.connect(splitter);
+    splitter.connect(merger, 0, 0);          // left, direct
+    splitter.connect(merger, 1, 1);          // right, direct
+    splitter.connect(widenDelay, 1);         // right, delayed copy for width
+    widenDelay.connect(widenWetGain);
+    widenWetGain.connect(merger, 0, 1);
+
+    merger.connect(audioCtx.destination);
+
+    audioGraphReady = true;
+    return true;
+  } catch (err) {
+    audioGraphFailed = true;
+    console.warn('Web Audio API unavailable, falling back to standard playback:', err);
+    try { if (sourceNode) sourceNode.connect(audioCtx.destination); } catch (e) {}
+    const note = document.getElementById('soundUnavailableNote');
+    if (note) note.hidden = false;
+    return false;
+  }
+}
+
+function setEQGain(index, value){
+  soundSettings.eq[index] = value;
+  if (audioGraphReady && eqFilters[index]) eqFilters[index].gain.value = value;
+  saveSoundSettings();
+}
+function resetEQ(){
+  soundSettings.eq = [0, 0, 0, 0, 0];
+  eqFilters.forEach(f => { if (f) f.gain.value = 0; });
+  saveSoundSettings();
+  renderEQSliders();
+}
+function setBassEnabled(enabled){
+  soundSettings.bassEnabled = enabled;
+  if (audioGraphReady && bassFilter) bassFilter.gain.value = enabled ? soundSettings.bassGain : 0;
+  saveSoundSettings();
+}
+function setBassGain(value){
+  soundSettings.bassGain = value;
+  if (audioGraphReady && bassFilter && soundSettings.bassEnabled) bassFilter.gain.value = value;
+  saveSoundSettings();
+}
+function applyReverbAmount(){
+  if (!audioGraphReady) return;
+  const amt = soundSettings.reverbEnabled ? soundSettings.reverbAmount / 100 : 0;
+  const now = audioCtx.currentTime;
+  wetGain.gain.setTargetAtTime(amt * 0.6, now, 0.05);
+  widenWetGain.gain.setTargetAtTime(amt * 0.35, now, 0.05);
+}
+function setReverbEnabled(enabled){
+  soundSettings.reverbEnabled = enabled;
+  applyReverbAmount();
+  saveSoundSettings();
+}
+function setReverbAmount(value){
+  soundSettings.reverbAmount = value;
+  applyReverbAmount();
+  saveSoundSettings();
+}
+
+function renderEQSliders(){
+  const container = document.getElementById('eqSliders');
+  if (!container) return;
+  container.innerHTML = '';
+  EQ_BANDS.forEach((freq, i) => {
+    const val = soundSettings.eq[i] || 0;
+    const pct = ((val + 12) / 24) * 100;
+    const label = freq >= 1000 ? (freq / 1000) + 'kHz' : freq + 'Hz';
+    const band = document.createElement('div');
+    band.className = 'eq-band';
+    band.innerHTML = `
+      <span class="eq-value" data-role="value">${val > 0 ? '+' : ''}${val.toFixed(0)}</span>
+      <div class="eq-band-slider-wrap">
+        <input type="range" class="eq-range" min="-12" max="12" step="1" value="${val}" style="--pct:${pct}%">
+      </div>
+      <span class="eq-freq">${label}</span>
+    `;
+    const input = band.querySelector('input');
+    const valueLabel = band.querySelector('[data-role="value"]');
+    input.addEventListener('input', () => {
+      const v = Number(input.value);
+      const p = ((v + 12) / 24) * 100;
+      input.style.setProperty('--pct', p + '%');
+      valueLabel.textContent = (v > 0 ? '+' : '') + v.toFixed(0);
+      ensureAudioContext();
+      setEQGain(i, v);
+    });
+    container.appendChild(band);
+  });
+}
+
+function restoreSoundUI(){
+  const bassToggle = document.getElementById('bassToggle');
+  const bassSlider = document.getElementById('bassSlider');
+  const bassValueLabel = document.getElementById('bassValueLabel');
+  bassToggle.checked = soundSettings.bassEnabled;
+  bassSlider.value = soundSettings.bassGain;
+  bassSlider.style.setProperty('--pct', ((soundSettings.bassGain / 12) * 100) + '%');
+  bassValueLabel.textContent = `+${Number(soundSettings.bassGain).toFixed(1)} dB`;
+
+  const reverbToggle = document.getElementById('reverbToggle');
+  const reverbSlider = document.getElementById('reverbSlider');
+  const reverbValueLabel = document.getElementById('reverbValueLabel');
+  reverbToggle.checked = soundSettings.reverbEnabled;
+  reverbSlider.value = soundSettings.reverbAmount;
+  reverbSlider.style.setProperty('--pct', soundSettings.reverbAmount + '%');
+  reverbValueLabel.textContent = soundSettings.reverbAmount + '%';
+
+  renderEQSliders();
+}
+
+/* =========================================================
+   TRACK LOADING / ADDING / DELETING
+   ========================================================= */
+async function loadTracksFromDB(){
+  try {
+    const records = await dbGetAll();
+    tracks = records.map(r => ({
+      id: r.id,
+      name: r.name,
+      title: r.title,
+      artist: r.artist,
+      size: r.size,
+      type: r.type,
+      duration: r.duration || 0,
+      blobUrl: URL.createObjectURL(r.blob)
+    }));
+    renderTrackList();
+    updateTrackCount();
+  } catch (err) {
+    console.error('Failed loading tracks from IndexedDB:', err);
+    showToast('Could not load saved tracks', true);
+  }
+}
+
+async function handleFiles(fileList){
+  const files = Array.from(fileList).filter(isAudioFile);
+  if (!files.length) { showToast('No audio files found in selection', true); return; }
+
+  let added = 0, skipped = 0;
+  for (const file of files) {
+    if (tracks.some(t => t.name === file.name && t.size === file.size)) { skipped++; continue; }
+    const { title, artist } = parseFileName(file.name);
+    const record = { name: file.name, title, artist, size: file.size, type: file.type, duration: 0, blob: file, addedAt: Date.now() };
+
+    let id;
+    if (db) {
+      try { id = await dbAddWithRetry(record); }
+      catch (err) { console.error('DB add failed after retry:', err); id = 'temp-' + Date.now() + '-' + Math.random(); }
+    } else {
+      id = 'temp-' + Date.now() + '-' + Math.random();
+    }
+
+    const trackObj = { ...record, id, blobUrl: URL.createObjectURL(file) };
+    delete trackObj.blob;
+    tracks.push(trackObj);
+    added++;
+
+    getAudioDuration(file).then(dur => {
+      trackObj.duration = dur;
+      updateDurationInDOM(trackObj.id, dur);
+      if (db && typeof id === 'number') dbUpdateDuration(id, dur).catch(() => {});
+    }).catch(() => {});
+  }
+
+  renderTrackList(document.getElementById('searchInput').value);
+  updateTrackCount();
+  updateStorageInfo();
+
+  if (added) {
+    let msg = `Added ${added} track${added === 1 ? '' : 's'}`;
+    if (skipped) msg += `, skipped ${skipped} duplicate${skipped === 1 ? '' : 's'}`;
+    showToast(msg);
+    // Re-request persistence now that there's real data — some browsers'
+    // heuristics respond better to this than a request made at empty startup.
+    requestPersistentStorage();
+  } else {
+    showToast(skipped ? 'Those tracks are already in your library' : 'No tracks added', true);
+  }
+}
+
+async function deleteTrack(rawId){
+  const idx = tracks.findIndex(t => String(t.id) === String(rawId));
+  if (idx === -1) return;
+  const track = tracks[idx];
+  const wasActive = idx === currentIndex;
+
+  if (db && typeof track.id === 'number') {
+    try { await dbDelete(track.id); } catch (err) { console.error('DB delete failed:', err); }
+  }
+  URL.revokeObjectURL(track.blobUrl);
+  tracks.splice(idx, 1);
+
+  if (wasActive) {
+    pauseAudio();
+    audio.removeAttribute('src');
+    currentIndex = -1;
+    updateNowPlayingUI(null);
+  } else if (idx < currentIndex) {
+    currentIndex--;
+  }
+
+  renderTrackList(document.getElementById('searchInput').value);
+  updateTrackCount();
+  updateStorageInfo();
+  showToast('Track removed');
+}
+
+/* =========================================================
+   RENDERING
+   ========================================================= */
+function updateTrackCount(){
+  document.getElementById('trackCount').textContent = `${tracks.length} track${tracks.length === 1 ? '' : 's'}`;
+}
+function updateDurationInDOM(id, duration){
+  const row = document.querySelector(`.track-row[data-id="${CSS.escape(String(id))}"] .t-duration`);
+  if (row) row.textContent = formatTime(duration);
+}
+function renderTrackList(filter){
+  filter = filter || '';
+  const listBody = document.getElementById('trackListBody');
+  const emptyState = document.getElementById('emptyState');
+  const trackListEl = document.getElementById('trackList');
+  const q = filter.trim().toLowerCase();
+
+  if (!tracks.length) {
+    emptyState.hidden = false;
+    trackListEl.hidden = true;
+    return;
+  }
+  emptyState.hidden = true;
+  trackListEl.hidden = false;
+
+  const visible = q ? tracks.filter(t => t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q)) : tracks;
+
+  if (!visible.length) {
+    listBody.innerHTML = `<div class="no-results">No tracks match "${escapeHtml(filter)}"</div>`;
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  visible.forEach(track => {
+    const realIndex = tracks.indexOf(track);
+    const row = document.createElement('div');
+    row.className = 'track-row' + (realIndex === currentIndex ? ' active' : '') + (realIndex === currentIndex && isPlaying ? ' playing' : '');
+    row.dataset.id = String(track.id);
+    row.dataset.index = String(realIndex);
+    row.innerHTML = `
+      <span class="track-num">
+        <span class="num-text">${realIndex + 1}</span>
+        ${eqBarsSVG}
+        ${playHoverSVG}
+      </span>
+      <span class="track-info">
+        <span class="t-title">${escapeHtml(track.title)}</span>
+        <span class="t-artist">${escapeHtml(track.artist)}</span>
+      </span>
+      <span class="t-duration">${track.duration ? formatTime(track.duration) : '—:—'}</span>
+      <button class="btn-delete" title="Remove" data-action="delete" aria-label="Remove track">${trashIconSVG}</button>
+    `;
+    frag.appendChild(row);
+  });
+  listBody.innerHTML = '';
+  listBody.appendChild(frag);
+}
+
+document.getElementById('trackListBody').addEventListener('click', (e) => {
+  const row = e.target.closest('.track-row');
+  if (!row) return;
+  const delBtn = e.target.closest('[data-action="delete"]');
+  if (delBtn) { e.stopPropagation(); deleteTrack(row.dataset.id); return; }
+  const index = Number(row.dataset.index);
+  if (index === currentIndex) togglePlayPause();
+  else loadTrack(index, true);
+});
+
+/* =========================================================
+   PLAYBACK ENGINE
+   ========================================================= */
+function loadTrack(index, autoplay){
+  if (index < 0 || index >= tracks.length) return;
+  currentIndex = index;
+  const track = tracks[index];
+  audio.src = track.blobUrl;
+  audio.currentTime = 0;
+  updateNowPlayingUI(track);
+  renderTrackList(document.getElementById('searchInput').value);
+  updateMediaSession(track);
+  if (autoplay) playAudio();
+  else updatePlayPauseUI();
+}
+function playAudio(){
+  ensureAudioContext();
+  audio.play().then(() => {
+    isPlaying = true;
+    updatePlayPauseUI();
+    startProgressLoop();
+    if ('mediaSession' in navigator) {
+      try { navigator.mediaSession.playbackState = 'playing'; } catch (e) {}
+    }
+    updateMediaSessionPositionState();
+  }).catch(err => {
+    console.error('Playback failed:', err);
+    showToast('Unable to play this track', true);
+  });
+}
+function pauseAudio(){
+  audio.pause();
+  isPlaying = false;
+  updatePlayPauseUI();
+  stopProgressLoop();
+  if ('mediaSession' in navigator) {
+    try { navigator.mediaSession.playbackState = 'paused'; } catch (e) {}
+  }
+  updateMediaSessionPositionState();
+}
+function togglePlayPause(){
+  if (currentIndex === -1) { if (tracks.length) loadTrack(0, true); return; }
+  isPlaying ? pauseAudio() : playAudio();
+}
+function getRandomIndex(exclude){
+  if (tracks.length <= 1) return 0;
+  let idx;
+  do { idx = Math.floor(Math.random() * tracks.length); } while (idx === exclude);
+  return idx;
+}
+function nextTrack(){
+  if (!tracks.length) return;
+  let nextIndex;
+  if (shuffle) {
+    nextIndex = getRandomIndex(currentIndex);
+  } else {
+    nextIndex = currentIndex + 1;
+    if (nextIndex >= tracks.length) {
+      if (repeatMode === 'all') nextIndex = 0;
+      else { pauseAudio(); return; }
+    }
+  }
+  loadTrack(nextIndex, true);
+}
+function prevTrack(){
+  if (!tracks.length) return;
+  if (audio.currentTime > 3) { audio.currentTime = 0; return; }
+  let prevIndex;
+  if (shuffle) prevIndex = getRandomIndex(currentIndex);
+  else {
+    prevIndex = currentIndex - 1;
+    if (prevIndex < 0) prevIndex = repeatMode === 'all' ? tracks.length - 1 : 0;
+  }
+  loadTrack(prevIndex, true);
+}
+
+function startProgressLoop(){
+  cancelAnimationFrame(rafId);
+  const step = () => { if (!isSeeking) updateSeekUI(); rafId = requestAnimationFrame(step); };
+  rafId = requestAnimationFrame(step);
+}
+function stopProgressLoop(){ cancelAnimationFrame(rafId); }
+function updateSeekUI(){
+  const seekBar = document.getElementById('seekBar');
+  const cur = audio.currentTime || 0;
+  const dur = audio.duration || 0;
+  const pct = dur ? (cur / dur) * 100 : 0;
+  seekBar.value = pct;
+  seekBar.style.setProperty('--pct', pct + '%');
+  document.getElementById('currentTimeLabel').textContent = formatTime(cur);
+  document.getElementById('durationLabel').textContent = formatTime(dur);
+}
+
+function updateNowPlayingUI(track){
+  const titleEl = document.getElementById('nowPlayingTitle');
+  const artistEl = document.getElementById('nowPlayingArtist');
+  const artEl = document.getElementById('nowPlayingArt');
+  if (!track) {
+    titleEl.textContent = 'No track selected';
+    artistEl.textContent = '—';
+    artEl.textContent = '♪';
+    document.title = 'BDPLAYER';
+    document.getElementById('seekBar').value = 0;
+    document.getElementById('seekBar').style.setProperty('--pct', '0%');
+    document.getElementById('currentTimeLabel').textContent = '0:00';
+    document.getElementById('durationLabel').textContent = '0:00';
+    if ('mediaSession' in navigator) {
+      try { navigator.mediaSession.metadata = null; navigator.mediaSession.playbackState = 'none'; } catch (e) {}
+    }
+    return;
+  }
+  titleEl.textContent = track.title;
+  artistEl.textContent = track.artist;
+  artEl.textContent = (track.title[0] || '♪').toUpperCase();
+  document.title = `${track.title} · ${track.artist}`;
+}
+function updatePlayPauseUI(){
+  const btn = document.getElementById('btnPlayPause');
+  btn.innerHTML = isPlaying ? pauseIconSVG : playIconSVG;
+  btn.setAttribute('aria-label', isPlaying ? 'Pause' : 'Play');
+  document.querySelectorAll('.track-row.playing').forEach(r => r.classList.remove('playing'));
+  const activeRow = document.querySelector(`.track-row[data-index="${currentIndex}"]`);
+  if (activeRow) activeRow.classList.toggle('playing', isPlaying);
+}
+function updateVolumeIcon(v){
+  document.getElementById('btnVolumeIcon').innerHTML = Number(v) === 0 ? muteIconSVG : volume2IconSVG;
+}
+
+/* =========================================================
+   MEDIA SESSION — lock screen / control center integration
+   ========================================================= */
+function updateMediaSession(track){
+  if (!('mediaSession' in navigator)) return;
+  try {
+    const artwork = [];
+    if (appIconDataUrl192) artwork.push({ src: appIconDataUrl192, sizes: '192x192', type: 'image/png' });
+    if (appIconDataUrl512) artwork.push({ src: appIconDataUrl512, sizes: '512x512', type: 'image/png' });
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: track.title,
+      artist: track.artist,
+      album: 'BDPLAYER',
+      artwork: artwork
+    });
+  } catch (e) {}
+  updateMediaSessionPositionState();
+}
+
+/* Keeps the lock-screen / control-center scrubber accurate. Called
+   on discrete events (track load, play, pause, seek) rather than on
+   every animation frame — the OS interpolates position between
+   updates using duration/playbackRate/timestamp, per the Media
+   Session spec, so frequent calls aren't necessary. */
+function updateMediaSessionPositionState(){
+  if (!('mediaSession' in navigator) || typeof navigator.mediaSession.setPositionState !== 'function') return;
+  const dur = audio.duration;
+  if (!isFinite(dur) || dur <= 0) return;
+  try {
+    navigator.mediaSession.setPositionState({
+      duration: dur,
+      playbackRate: audio.playbackRate || 1,
+      position: Math.min(audio.currentTime || 0, dur)
+    });
+  } catch (e) {}
+}
+
+/* =========================================================
+   EVENT WIRING
+   ========================================================= */
+audio.addEventListener('ended', () => {
+  if (repeatMode === 'one') { audio.currentTime = 0; playAudio(); }
+  else nextTrack();
+});
+audio.addEventListener('error', () => { if (currentIndex !== -1) showToast('Error playing this track', true); });
+audio.addEventListener('loadedmetadata', () => {
+  if (!isSeeking) updateSeekUI();
+  updateMediaSessionPositionState();
+});
+
+document.getElementById('btnPlayPause').addEventListener('click', togglePlayPause);
+document.getElementById('btnNext').addEventListener('click', nextTrack);
+document.getElementById('btnPrev').addEventListener('click', prevTrack);
+
+document.getElementById('btnShuffle').addEventListener('click', () => {
+  shuffle = !shuffle;
+  document.getElementById('btnShuffle').classList.toggle('active', shuffle);
+  safeStorage.set('shuffle', shuffle);
+});
+document.getElementById('btnRepeat').addEventListener('click', () => {
+  const modes = ['off', 'all', 'one'];
+  repeatMode = modes[(modes.indexOf(repeatMode) + 1) % modes.length];
+  const btn = document.getElementById('btnRepeat');
+  btn.classList.toggle('active', repeatMode !== 'off');
+  btn.dataset.mode = repeatMode;
+  btn.innerHTML = repeatMode === 'one' ? repeatOneIconSVG : repeatOffIconSVG;
+  safeStorage.set('repeatMode', repeatMode);
+});
+
+const seekBar = document.getElementById('seekBar');
+seekBar.addEventListener('input', () => {
+  isSeeking = true;
+  const pct = seekBar.value;
+  seekBar.style.setProperty('--pct', pct + '%');
+  const dur = audio.duration || 0;
+  document.getElementById('currentTimeLabel').textContent = formatTime((pct / 100) * dur);
+});
+seekBar.addEventListener('change', () => {
+  const dur = audio.duration || 0;
+  audio.currentTime = (seekBar.value / 100) * dur;
+  isSeeking = false;
+  updateMediaSessionPositionState();
+});
+
+const volumeBar = document.getElementById('volumeBar');
+volumeBar.addEventListener('input', () => {
+  const v = volumeBar.value;
+  audio.volume = v / 100;
+  volumeBar.style.setProperty('--pct', v + '%');
+  safeStorage.set('volume', v);
+  updateVolumeIcon(v);
+});
+document.getElementById('btnVolumeIcon').addEventListener('click', () => {
+  if (audio.volume > 0) {
+    lastVolume = volumeBar.value;
+    audio.volume = 0; volumeBar.value = 0; volumeBar.style.setProperty('--pct', '0%');
+  } else {
+    const restore = lastVolume || 80;
+    audio.volume = restore / 100; volumeBar.value = restore; volumeBar.style.setProperty('--pct', restore + '%');
+  }
+  updateVolumeIcon(volumeBar.value);
+});
+
+/* File inputs: the change listeners below are what actually import
+   files. Opening the picker itself is handled natively via the
+   <label for="..."> elements in the HTML — no JS .click() proxy. */
+document.getElementById('fileInput').addEventListener('change', (e) => { handleFiles(e.target.files); e.target.value = ''; });
+document.getElementById('folderInput').addEventListener('change', (e) => { handleFiles(e.target.files); e.target.value = ''; });
+
+/* Keyboard accessibility for the label-as-button triggers: Enter/Space
+   calls .click() on the LABEL (native forwarding), never on the input
+   directly, which keeps this on the same trusted code path as a real tap. */
+function wireLabelKeyboardTrigger(id){
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('keydown', (e) => {
+    if (e.code === 'Enter' || e.code === 'Space') {
+      e.preventDefault();
+      el.click();
+    }
+  });
+}
+wireLabelKeyboardTrigger('btnAddFiles');
+wireLabelKeyboardTrigger('btnAddFolder');
+wireLabelKeyboardTrigger('btnAddFilesEmpty');
+
+document.getElementById('searchInput').addEventListener('input', (e) => renderTrackList(e.target.value));
+
+document.getElementById('btnClearAll').addEventListener('click', async () => {
+  if (!tracks.length) return;
+  if (!confirm('Remove all tracks from your library? This cannot be undone.')) return;
+  try {
+    if (db) await dbClear();
+    tracks.forEach(t => URL.revokeObjectURL(t.blobUrl));
+    tracks = [];
+    currentIndex = -1;
+    pauseAudio();
+    audio.removeAttribute('src');
+    updateNowPlayingUI(null);
+    renderTrackList();
+    updateTrackCount();
+    updateStorageInfo();
+    showToast('Library cleared');
+  } catch (err) {
+    console.error(err);
+    showToast('Failed to clear library', true);
+  }
+});
+
+/* Drag & drop anywhere on the window — doesn't depend on the file
+   picker API at all, so it remains a reliable fallback regardless
+   of any sandbox restriction on <input type="file">. */
+let dragCounter = 0;
+window.addEventListener('dragenter', (e) => {
+  e.preventDefault();
+  if (!e.dataTransfer || !Array.from(e.dataTransfer.types).includes('Files')) return;
+  dragCounter++;
+  document.getElementById('dropOverlay').classList.add('active');
+});
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('dragleave', () => {
+  dragCounter = Math.max(0, dragCounter - 1);
+  if (dragCounter === 0) document.getElementById('dropOverlay').classList.remove('active');
+});
+window.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dragCounter = 0;
+  document.getElementById('dropOverlay').classList.remove('active');
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+});
+
+/* Keyboard shortcuts */
+document.addEventListener('keydown', (e) => {
+  const settingsModalEl = document.getElementById('settingsModal');
+  if (e.code === 'Escape' && !settingsModalEl.hidden) { closeSettingsModal(); return; }
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (e.code === 'Space') { e.preventDefault(); togglePlayPause(); }
+  else if (e.code === 'ArrowRight') { audio.currentTime = Math.min((audio.currentTime || 0) + 5, audio.duration || 0); updateMediaSessionPositionState(); }
+  else if (e.code === 'ArrowLeft') { audio.currentTime = Math.max((audio.currentTime || 0) - 5, 0); updateMediaSessionPositionState(); }
+});
+
+/* Media Session action handlers (lock screen / control center).
+   Each is registered independently with its own try/catch so that
+   one action type unsupported by a given browser can never prevent
+   the others from being wired up. */
+if ('mediaSession' in navigator) {
+  const setHandler = (action, handler) => {
+    try { navigator.mediaSession.setActionHandler(action, handler); }
+    catch (e) { /* action not supported in this browser — safe to ignore */ }
+  };
+  setHandler('play', playAudio);
+  setHandler('pause', pauseAudio);
+  setHandler('previoustrack', prevTrack);
+  setHandler('nexttrack', nextTrack);
+  setHandler('stop', () => {
+    pauseAudio();
+    audio.currentTime = 0;
+    updateSeekUI();
+    updateMediaSessionPositionState();
+  });
+  setHandler('seekbackward', (details) => {
+    const skip = (details && details.seekOffset) || 10;
+    audio.currentTime = Math.max((audio.currentTime || 0) - skip, 0);
+    updateMediaSessionPositionState();
+  });
+  setHandler('seekforward', (details) => {
+    const skip = (details && details.seekOffset) || 10;
+    audio.currentTime = Math.min((audio.currentTime || 0) + skip, audio.duration || 0);
+    updateMediaSessionPositionState();
+  });
+  setHandler('seekto', (details) => {
+    if (details && typeof details.seekTime === 'number') {
+      audio.currentTime = details.seekTime;
+      updateMediaSessionPositionState();
+    }
+  });
+}
+
+/* iOS "Add to Home Screen" hint — skipped under data:/blob:, where
+   Add to Home Screen either isn't offered or wouldn't produce a
+   stable, reusable shortcut anyway. */
+function checkIOSInstallPrompt(){
+  if (IS_OPAQUE_ORIGIN) return;
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+  const isStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+  if (isIOS && !isStandalone && !safeStorage.get('iosInstallDismissed')) {
+    document.getElementById('iosInstallBanner').hidden = false;
+  }
+}
+document.getElementById('iosInstallDismiss').addEventListener('click', () => {
+  document.getElementById('iosInstallBanner').hidden = true;
+  safeStorage.set('iosInstallDismissed', '1');
+});
+
+/* Chrome/Android install prompt */
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  document.getElementById('btnInstall').hidden = false;
+});
+document.getElementById('btnInstall').addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  await deferredPrompt.userChoice;
+  deferredPrompt = null;
+  document.getElementById('btnInstall').hidden = true;
+});
+
+/* =========================================================
+   SETTINGS MODAL (Sound + Appearance)
+   ========================================================= */
+function openSettingsModal(tab){
+  ensureAudioContext();
+  document.getElementById('settingsModal').hidden = false;
+  document.body.style.overflow = 'hidden';
+  if (tab) switchSettingsTab(tab);
+}
+function closeSettingsModal(){
+  document.getElementById('settingsModal').hidden = true;
+  document.body.style.overflow = '';
+}
+function switchSettingsTab(tab){
+  document.querySelectorAll('.modal-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-panel').forEach(p => p.hidden = p.dataset.panel !== tab);
+}
+document.getElementById('btnSettings').addEventListener('click', () => openSettingsModal('sound'));
+document.getElementById('btnCloseSettings').addEventListener('click', closeSettingsModal);
+document.getElementById('settingsModal').addEventListener('click', (e) => {
+  if (e.target.id === 'settingsModal') closeSettingsModal();
+});
+document.querySelectorAll('.modal-tab').forEach(btn => {
+  btn.addEventListener('click', () => switchSettingsTab(btn.dataset.tab));
+});
+document.getElementById('btnResetEQ').addEventListener('click', resetEQ);
+
+document.getElementById('bassToggle').addEventListener('change', (e) => {
+  ensureAudioContext();
+  setBassEnabled(e.target.checked);
+});
+document.getElementById('bassSlider').addEventListener('input', (e) => {
+  const v = Number(e.target.value);
+  document.getElementById('bassValueLabel').textContent = `+${v.toFixed(1)} dB`;
+  e.target.style.setProperty('--pct', ((v / 12) * 100) + '%');
+  ensureAudioContext();
+  setBassGain(v);
+});
+document.getElementById('reverbToggle').addEventListener('change', (e) => {
+  ensureAudioContext();
+  setReverbEnabled(e.target.checked);
+});
+document.getElementById('reverbSlider').addEventListener('input', (e) => {
+  const v = Number(e.target.value);
+  document.getElementById('reverbValueLabel').textContent = v + '%';
+  e.target.style.setProperty('--pct', v + '%');
+  ensureAudioContext();
+  setReverbAmount(v);
+});
+
+/* =========================================================
+   SETTINGS RESTORE (volume / shuffle / repeat)
+   ========================================================= */
+function restoreSettings(){
+  const volRaw = safeStorage.get('volume', null);
+  const v = volRaw !== null ? Number(volRaw) : 80;
+  audio.volume = v / 100;
+  volumeBar.value = v;
+  volumeBar.style.setProperty('--pct', v + '%');
+  lastVolume = v;
+  updateVolumeIcon(v);
+
+  shuffle = safeStorage.get('shuffle', 'false') === 'true';
+  document.getElementById('btnShuffle').classList.toggle('active', shuffle);
+
+  repeatMode = safeStorage.get('repeatMode', 'off');
+  const repeatBtn = document.getElementById('btnRepeat');
+  repeatBtn.classList.toggle('active', repeatMode !== 'off');
+  repeatBtn.dataset.mode = repeatMode;
+  repeatBtn.innerHTML = repeatMode === 'one' ? repeatOneIconSVG : repeatOffIconSVG;
+}
+
+/* =========================================================
+   INIT
+   ========================================================= */
+async function init(){
+  try {
+    applyAccentColor(currentAccent, false);
+    setupIconsAndManifest();
+    registerServiceWorker();
+    requestPersistentStorage();
+    restoreSettings();
+    loadSoundSettings();
+    restoreSoundUI();
+    checkIOSInstallPrompt();
+    updatePlayPauseUI();
+
+    try {
+      db = await openDBWithRetry(3);
+      await loadTracksFromDB();
+    } catch (err) {
+      console.error('IndexedDB init failed after retries:', err);
+      showToast('Storage unavailable — tracks added now will only last this session', true);
+    }
+    updateStorageInfo();
+  } catch (err) {
+    console.error('App initialization error:', err);
+    showToast('Some features may be limited in this browsing context', true);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
