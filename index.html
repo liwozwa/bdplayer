@@ -612,7 +612,7 @@ input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:#4d4
       <div class="modal-body">
 
         <section class="tab-panel" data-panel="sound">
-          <div class="settings-note">Turning on EQ, Bass Boost, or Reverb activates enhanced audio processing. Because of how iOS manages power in the background, playback with these effects on may pause when the app is locked or backgrounded. Leave effects off for the most reliable background and lock-screen playback.</div>
+          <div class="settings-note">Turning on EQ, Bass Boost, or Reverb engages enhanced audio processing. If iOS interrupts that processing while the app is backgrounded, BDPLAYER automatically switches back to standard playback so your music keeps going — the effects will simply turn back off. Leave effects off if uninterrupted background playback matters more to you than the sound processing.</div>
           <div class="settings-note" id="soundUnavailableNote" hidden>Advanced audio effects aren't supported in this browser — playback will continue normally without them.</div>
 
           <div class="settings-section">
@@ -669,13 +669,12 @@ input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:#4d4
 
 /* =========================================================
    SAFE STORAGE WRAPPER
-   Opaque-origin contexts (data:, blob:, some sandboxed
-   iframes/WebViews) can throw a SecurityError on ANY
-   localStorage access. An uncaught throw at the top level
-   of this script would stop every line below it from
-   running — including every addEventListener call. Every
-   localStorage touch in this app goes through this wrapper
-   so that scenario can no longer happen.
+   Defensive by design: some restricted browsing contexts can
+   throw on ANY localStorage access, and an uncaught throw at
+   the top level of this script would stop every line below it
+   from running — including every addEventListener call. Every
+   localStorage touch in this app goes through this wrapper so
+   that scenario can never happen.
    ========================================================= */
 const safeStorage = {
   get(key, fallback){
@@ -720,32 +719,83 @@ let rafId = null;
 let isSeeking = false;
 let audioUnlocked = false;
 
-/* The <audio> element is created via JS but deliberately attached to
-   the DOM (hidden) rather than left detached. Some iOS Safari versions
-   are more consistent about maintaining a background audio session for
-   elements that are part of the render tree. playsinline attributes are
-   primarily a <video> concern but are included defensively — they are
-   harmless no-ops for <audio>. preload is 'auto' since sources are
-   local blob: URLs anyway (no real network cost) and fuller buffering
-   reduces the chance of a stall-triggered pause. */
-const audio = document.createElement('audio');
-audio.preload = 'auto';
-audio.setAttribute('playsinline', '');
-audio.setAttribute('webkit-playsinline', '');
-audio.style.display = 'none';
-document.body.appendChild(audio);
+/* =========================================================
+   AUDIO ELEMENT FACTORY
+   Every <audio> element the app ever uses (the original one,
+   and any replacement created by the background-audio fallback
+   below) is built and wired up the same way here. Kept in the
+   DOM (hidden) rather than detached — iOS is more consistent
+   about maintaining a background audio/Now Playing session for
+   elements that are part of the render tree.
+   ========================================================= */
+function createAudioElement(){
+  const el = document.createElement('audio');
+  el.preload = 'auto';
+  el.setAttribute('playsinline', '');
+  el.setAttribute('webkit-playsinline', '');
+  el.style.display = 'none';
+  document.body.appendChild(el);
+  attachAudioElementListeners(el);
+  return el;
+}
+
+/* Every handler below first checks `el !== audio` and bails out —
+   this guards against a stale/abandoned element (left behind by
+   the background-audio fallback) still firing events after the
+   app has already moved on to a fresh element. */
+function attachAudioElementListeners(el){
+  el.addEventListener('ended', () => {
+    if (el !== audio) return;
+    if (repeatMode === 'one') { audio.currentTime = 0; playAudio(); }
+    else nextTrack();
+  });
+  el.addEventListener('error', () => {
+    if (el !== audio) return;
+    if (currentIndex !== -1) showToast('Error playing this track', true);
+  });
+  el.addEventListener('loadedmetadata', () => {
+    if (el !== audio) return;
+    if (!isSeeking) updateSeekUI();
+    updateMediaSessionPositionState();
+  });
+  /* Safety nets: if iOS pauses/resumes the element itself outside of
+     our own playAudio()/pauseAudio() calls, keep isPlaying, the
+     play/pause icon, and mediaSession.playbackState honest. */
+  el.addEventListener('pause', () => {
+    if (el !== audio) return;
+    if (isPlaying) {
+      isPlaying = false;
+      updatePlayPauseUI();
+      stopProgressLoop();
+      if ('mediaSession' in navigator) {
+        try { navigator.mediaSession.playbackState = 'paused'; } catch (e) {}
+      }
+    }
+  });
+  el.addEventListener('play', () => {
+    if (el !== audio) return;
+    if (!isPlaying) {
+      isPlaying = true;
+      updatePlayPauseUI();
+      startProgressLoop();
+      if ('mediaSession' in navigator) {
+        try { navigator.mediaSession.playbackState = 'playing'; } catch (e) {}
+      }
+    }
+  });
+}
+
+/* The active <audio> element. Kept as a reassignable `let` because
+   the background-audio fallback (Web Audio Engine section, below)
+   may need to swap in a brand-new element if a Web Audio graph gets
+   irrecoverably stuck — once an element is routed through
+   createMediaElementSource(), there is no way to "unhook" it, so
+   recovering means switching to a fresh, never-routed element. */
+let audio = createAudioElement();
 
 const DB_NAME = 'OfflineAudioPlayerDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'tracks';
-
-/* =========================================================
-   ENVIRONMENT DETECTION (data:/blob: opaque origins)
-   Used only to skip the iOS "Add to Home Screen" suggestion
-   (installing a data: URL wouldn't produce a stable icon),
-   not to show any warning UI.
-   ========================================================= */
-const IS_OPAQUE_ORIGIN = location.protocol === 'data:' || location.protocol === 'blob:';
 
 /* =========================================================
    COLOR / THEME UTILITIES
@@ -824,7 +874,6 @@ function openDB(){
     try {
       req = indexedDB.open(DB_NAME, DB_VERSION);
     } catch (err) {
-      // Opaque-origin contexts (e.g. data: URLs) can throw synchronously here
       reject(err);
       return;
     }
@@ -843,11 +892,8 @@ function openDB(){
 }
 
 /* Retries opening IndexedDB a few times with a short backoff before
-   giving up. This helps in embedded/sandboxed WebViews where the
-   storage subsystem can be momentarily unavailable right at page
-   load, even though it works a moment later within the same origin
-   instance. It cannot make storage survive a brand-new data: URL
-   load — that boundary is enforced by the browser, not by timing. */
+   giving up — handles transient storage-init hiccups right at page
+   load without needing a full reload. */
 async function openDBWithRetry(maxAttempts){
   maxAttempts = maxAttempts || 3;
   let lastErr = null;
@@ -872,8 +918,6 @@ function dbAdd(record){
     } catch (err) { reject(err); }
   });
 }
-/* Retries a single failed write once before the caller falls back
-   to a session-only (temp) track entry. */
 async function dbAddWithRetry(record){
   try {
     return await dbAdd(record);
@@ -1031,8 +1075,8 @@ function setupIconsAndManifest(){
       name: 'BDPLAYER',
       short_name: 'BDPLAYER',
       description: 'A sleek, offline-capable audio player with EQ, bass boost and reverb, that stores your music locally in the browser.',
-      start_url: '.',
-      scope: '.',
+      start_url: 'https://liwozwa.github.io/bdplayer/',
+      scope: 'https://liwozwa.github.io/bdplayer/',
       display: 'standalone',
       background_color: '#000000',
       theme_color: '#000000',
@@ -1051,9 +1095,9 @@ function setupIconsAndManifest(){
 
 /* =========================================================
    SERVICE WORKER (app-shell caching)
-   Requires a secure context (https or localhost); skipped
-   automatically under data:/blob:/file: — offline playback
-   itself does not depend on this, it runs through IndexedDB.
+   Requires a secure context — satisfied automatically on
+   GitHub Pages (https). Offline playback itself never depends
+   on this; it runs entirely through IndexedDB.
    ========================================================= */
 function registerServiceWorker(){
   if (!('serviceWorker' in navigator)) return;
@@ -1085,11 +1129,6 @@ function registerServiceWorker(){
   }
 }
 
-/* Requests persistent storage. Called at startup AND again after
-   the first successful track import — some browsers' heuristics
-   for granting persistence weigh actual site engagement/data
-   presence, so asking again once there's real data in IndexedDB
-   can succeed even if the very first request didn't. */
 async function requestPersistentStorage(){
   if (navigator.storage && navigator.storage.persist) {
     try { await navigator.storage.persist(); } catch (e) {}
@@ -1105,24 +1144,40 @@ async function updateStorageInfo(){
 }
 
 /* =========================================================
-   WEB AUDIO ENGINE — 5-band EQ, Bass Boost, Reverb / 3D
+   WEB AUDIO ENGINE — 5-band EQ, Bass Boost, Reverb / 3D,
+   with an automatic background-safe fallback.
 
-   IMPORTANT (background playback): once an <audio> element is
-   routed through createMediaElementSource(), ALL of its output
-   must flow through the AudioContext from then on — there is no
-   way to "unhook" it later in the same session. iOS aggressively
-   suspends AudioContexts in the background to save power, which
-   silently kills audio that depends on one. To keep background /
-   lock-screen playback reliable for the common case, this graph
-   is created LAZILY — only the first time the user actually turns
-   on an effect (a non-zero EQ band, Bass Boost, or Reverb) — never
-   just from opening Settings, and never unconditionally on every
-   play(). If no effect is ever engaged in a session, audio plays
-   directly through the plain <audio> element the whole time.
+   Once an <audio> element is routed through
+   createMediaElementSource(), ALL of its output must flow
+   through the AudioContext from then on — there is no way to
+   "unhook" it later. iOS aggressively suspends AudioContexts in
+   the background, which can silently kill audio that depends on
+   one. Two things work together to handle this:
+
+   1) LAZY ENGAGEMENT — the graph is only created the first time
+      the user actually turns on an effect (a non-zero EQ band,
+      Bass Boost, or Reverb), never just from opening Settings
+      and never unconditionally on every play(). If no effect is
+      ever engaged, audio plays directly through the plain
+      <audio> element the whole session — the path iOS keeps
+      running reliably in the background.
+
+   2) AUTOMATIC FALLBACK — if the AudioContext becomes suspended
+      and won't recover (or gets force-closed) while something is
+      supposed to be playing, fallbackToDryAudio() below builds a
+      brand-new, never-routed <audio> element, hands off the
+      current src/time/volume to it, turns the effects off (so
+      the same trap can't immediately re-trigger), and resumes
+      audible playback on the new element. This can only run when
+      the page is actually given CPU time by iOS (foregrounding,
+      a lock-screen control tap, or a periodic wake window) — it
+      is a recovery mechanism, not a guarantee that a fully
+      OS-suspended page's JavaScript can be forced to run sooner.
    ========================================================= */
 const EQ_BANDS = [60, 230, 910, 4000, 14000];
 let audioCtx = null;
 let sourceNode = null;
+let audioGraphElement = null; // the specific <audio> element the current graph is bound to
 let eqFilters = [];
 let bassFilter = null;
 let convolver = null;
@@ -1130,6 +1185,7 @@ let dryGain = null, wetGain = null, preWiden = null;
 let splitter = null, merger = null, widenDelay = null, widenWetGain = null;
 let audioGraphReady = false;
 let audioGraphFailed = false;
+let suspendStrikes = 0;
 
 let soundSettings = {
   eq: [0, 0, 0, 0, 0],
@@ -1148,8 +1204,8 @@ function saveSoundSettings(){
   try { safeStorage.set('soundSettings', JSON.stringify(soundSettings)); } catch (e) {}
 }
 
-/* True if any effect is currently configured to be "on" — used to
-   decide whether the Web Audio graph needs to be engaged at all. */
+/* True if any effect is currently configured "on" — decides
+   whether the Web Audio graph needs to be engaged at all. */
 function effectsActive(){
   return soundSettings.bassEnabled || soundSettings.reverbEnabled || soundSettings.eq.some(v => v !== 0);
 }
@@ -1167,6 +1223,12 @@ function createImpulseResponse(ctx, duration, decay){
   return impulse;
 }
 
+function handleAudioContextStateChange(){
+  if (audioCtx && audioCtx.state === 'closed' && isPlaying) {
+    fallbackToDryAudio('context-closed-event');
+  }
+}
+
 function ensureAudioContext(){
   if (audioGraphReady) {
     if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
@@ -1175,6 +1237,7 @@ function ensureAudioContext(){
   if (audioGraphFailed) return false;
   try {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    audioGraphElement = audio;
     sourceNode = audioCtx.createMediaElementSource(audio);
 
     eqFilters = EQ_BANDS.map((freq, i) => {
@@ -1229,7 +1292,10 @@ function ensureAudioContext(){
 
     merger.connect(audioCtx.destination);
 
+    audioCtx.onstatechange = handleAudioContextStateChange;
+
     audioGraphReady = true;
+    suspendStrikes = 0;
     return true;
   } catch (err) {
     audioGraphFailed = true;
@@ -1241,17 +1307,86 @@ function ensureAudioContext(){
   }
 }
 
-/* Opportunistically resumes the AudioContext if it exists and has
-   been suspended (typically by iOS's background power management).
-   Safe to call at any time — a no-op when there is no graph yet or
-   the context is already running. This can only take effect when
-   the page actually gets a slice of CPU time (foregrounding, a
-   lock-screen control tap, or a brief OS-granted wake window) —
-   it cannot force iOS to keep a fully backgrounded page running. */
+/* Ambient resume + watchdog. Called on every mediaSession control
+   tap, visibilitychange, focus, pageshow, and a periodic keep-alive
+   interval. Tries to resume a suspended context; if that fails (or
+   keeps failing) while playback is supposed to be active, escalates
+   to the dry-audio fallback rather than leaving playback silently
+   stuck. */
 function resumeAudioPipelineIfSuspended(){
-  if (audioGraphReady && audioCtx && audioCtx.state === 'suspended') {
-    audioCtx.resume().catch(() => {});
+  if (!audioGraphReady || !audioCtx) { suspendStrikes = 0; return; }
+  if (audioCtx.state === 'running') { suspendStrikes = 0; return; }
+  if (audioCtx.state === 'closed') {
+    if (isPlaying) fallbackToDryAudio('context-closed');
+    return;
   }
+  audioCtx.resume().then(() => {
+    if (audioCtx.state === 'running') {
+      suspendStrikes = 0;
+    } else if (isPlaying) {
+      suspendStrikes++;
+      if (suspendStrikes >= 2) fallbackToDryAudio('resume-ineffective');
+    }
+  }).catch(() => {
+    if (isPlaying) {
+      suspendStrikes++;
+      if (suspendStrikes >= 2) fallbackToDryAudio('resume-rejected');
+    }
+  });
+}
+
+/* Builds a fresh, never-routed <audio> element and switches active
+   playback to it. autoplay controls whether this function itself
+   resumes playback (used by ambient callers) or leaves that to the
+   caller (used by playAudio(), which resumes right after regardless
+   of which branch — resume-succeeded or fell-back — was taken). */
+function fallbackToDryAudio(reason, autoplay){
+  if (autoplay === undefined) autoplay = true;
+  if (!audioGraphReady) return;
+  if (audio !== audioGraphElement) return; // already recovered / not on the routed element
+
+  console.warn('Falling back to direct <audio> playback:', reason);
+
+  const staleEl = audio;
+  const wasPlaying = isPlaying;
+  const savedSrc = staleEl.currentSrc || staleEl.src;
+  const savedTime = staleEl.currentTime || 0;
+  const savedVolume = staleEl.volume;
+
+  try { staleEl.pause(); } catch (e) {}
+
+  // Release the stuck graph; a new one can be built again later if
+  // the user re-enables an effect on the new element.
+  audioGraphReady = false;
+  try { if (audioCtx && audioCtx.state !== 'closed') audioCtx.close(); } catch (e) {}
+  audioCtx = null; sourceNode = null; eqFilters = []; bassFilter = null;
+  convolver = null; dryGain = null; wetGain = null; preWiden = null;
+  splitter = null; merger = null; widenDelay = null; widenWetGain = null;
+  audioGraphElement = null;
+  suspendStrikes = 0;
+
+  // Turn effects off — the new element carries no processing, and
+  // leaving them "on" in settings would immediately re-trigger the
+  // same trap the next time playback starts.
+  const hadEffects = effectsActive();
+  soundSettings.eq = [0, 0, 0, 0, 0];
+  soundSettings.bassEnabled = false;
+  soundSettings.reverbEnabled = false;
+  saveSoundSettings();
+  restoreSoundUI();
+
+  const freshEl = createAudioElement();
+  freshEl.volume = savedVolume;
+  if (savedSrc) freshEl.src = savedSrc;
+  freshEl.currentTime = savedTime;
+  audio = freshEl;
+
+  try { staleEl.remove(); } catch (e) {}
+
+  if (autoplay && wasPlaying) {
+    startElementPlayback();
+  }
+  if (hadEffects) showToast('Audio effects were turned off to keep playback running.', false);
 }
 
 function setEQGain(index, value){
@@ -1317,10 +1452,9 @@ function renderEQSliders(){
       const p = ((v + 12) / 24) * 100;
       input.style.setProperty('--pct', p + '%');
       valueLabel.textContent = (v > 0 ? '+' : '') + v.toFixed(0);
-      // Only engage the Web Audio graph when the band is actually
-      // moved away from 0 — keeps merely opening Settings, or
-      // dragging back to 0, from needlessly giving up the
-      // background-safe direct <audio> playback path.
+      // Only engage the Web Audio graph once the band actually moves
+      // away from 0 — keeps opening Settings, or dragging back to 0,
+      // from needlessly giving up background-safe direct playback.
       if (v !== 0) ensureAudioContext();
       setEQGain(i, v);
     });
@@ -1410,8 +1544,6 @@ async function handleFiles(fileList){
     let msg = `Added ${added} track${added === 1 ? '' : 's'}`;
     if (skipped) msg += `, skipped ${skipped} duplicate${skipped === 1 ? '' : 's'}`;
     showToast(msg);
-    // Re-request persistence now that there's real data — some browsers'
-    // heuristics respond better to this than a request made at empty startup.
     requestPersistentStorage();
   } else {
     showToast(skipped ? 'Those tracks are already in your library' : 'No tracks added', true);
@@ -1528,15 +1660,31 @@ function loadTrack(index, autoplay){
   if (autoplay) playAudio();
   else updatePlayPauseUI();
 }
-function playAudio(){
-  // Only route through the Web Audio graph if an effect is actually
-  // configured on, or the graph already exists from earlier in this
-  // session (it can't be "un-hooked" once created). Otherwise this
-  // stays a plain <audio>.play() call, which is the path iOS keeps
-  // running reliably in the background and on the lock screen.
-  if (effectsActive() || audioGraphReady) ensureAudioContext();
-  resumeAudioPipelineIfSuspended();
 
+/* Only touches the Web Audio graph when one already exists or an
+   effect is actually configured on. If a graph exists but is
+   suspended, this resolves resume-or-fallback BEFORE starting
+   playback, so the user never ends up in a silent "playing" state
+   with no audible output. */
+function playAudio(){
+  const needsGraph = effectsActive() || audioGraphReady;
+  if (needsGraph && !audioGraphReady) {
+    ensureAudioContext();
+  }
+  if (audioGraphReady && audioCtx.state !== 'running') {
+    audioCtx.resume().then(() => {
+      if (audioCtx.state !== 'running') fallbackToDryAudio('resume-not-running-on-play', false);
+      startElementPlayback();
+    }).catch(() => {
+      fallbackToDryAudio('resume-rejected-on-play', false);
+      startElementPlayback();
+    });
+    return;
+  }
+  startElementPlayback();
+}
+
+function startElementPlayback(){
   audio.play().then(() => {
     isPlaying = true;
     updatePlayPauseUI();
@@ -1550,6 +1698,7 @@ function playAudio(){
     showToast('Unable to play this track', true);
   });
 }
+
 function pauseAudio(){
   audio.pause();
   isPlaying = false;
@@ -1671,7 +1820,7 @@ function updateMediaSession(track){
    on discrete events (track load, play, pause, seek) rather than on
    every animation frame — the OS interpolates position between
    updates using duration/playbackRate/timestamp, per the Media
-   Session spec, so frequent calls aren't necessary. */
+   Session spec. */
 function updateMediaSessionPositionState(){
   if (!('mediaSession' in navigator) || typeof navigator.mediaSession.setPositionState !== 'function') return;
   const dur = audio.duration;
@@ -1687,42 +1836,11 @@ function updateMediaSessionPositionState(){
 
 /* =========================================================
    EVENT WIRING
+   (audio's own ended/error/loadedmetadata/pause/play listeners
+   live in attachAudioElementListeners() above, so they stay
+   correctly wired even after a background-audio fallback swaps
+   in a new element.)
    ========================================================= */
-audio.addEventListener('ended', () => {
-  if (repeatMode === 'one') { audio.currentTime = 0; playAudio(); }
-  else nextTrack();
-});
-audio.addEventListener('error', () => { if (currentIndex !== -1) showToast('Error playing this track', true); });
-audio.addEventListener('loadedmetadata', () => {
-  if (!isSeeking) updateSeekUI();
-  updateMediaSessionPositionState();
-});
-/* Safety nets: if iOS pauses/resumes the element itself outside of
-   our own playAudio()/pauseAudio() calls (e.g. forced by the OS
-   while backgrounded, or resumed via a system media control we
-   didn't directly route through), keep isPlaying, the play/pause
-   icon, and mediaSession.playbackState honest with reality. */
-audio.addEventListener('pause', () => {
-  if (isPlaying) {
-    isPlaying = false;
-    updatePlayPauseUI();
-    stopProgressLoop();
-    if ('mediaSession' in navigator) {
-      try { navigator.mediaSession.playbackState = 'paused'; } catch (e) {}
-    }
-  }
-});
-audio.addEventListener('play', () => {
-  if (!isPlaying) {
-    isPlaying = true;
-    updatePlayPauseUI();
-    startProgressLoop();
-    if ('mediaSession' in navigator) {
-      try { navigator.mediaSession.playbackState = 'playing'; } catch (e) {}
-    }
-  }
-});
-
 document.getElementById('btnPlayPause').addEventListener('click', togglePlayPause);
 document.getElementById('btnNext').addEventListener('click', nextTrack);
 document.getElementById('btnPrev').addEventListener('click', prevTrack);
@@ -1776,15 +1894,9 @@ document.getElementById('btnVolumeIcon').addEventListener('click', () => {
   updateVolumeIcon(volumeBar.value);
 });
 
-/* File inputs: the change listeners below are what actually import
-   files. Opening the picker itself is handled natively via the
-   <label for="..."> elements in the HTML — no JS .click() proxy. */
 document.getElementById('fileInput').addEventListener('change', (e) => { handleFiles(e.target.files); e.target.value = ''; });
 document.getElementById('folderInput').addEventListener('change', (e) => { handleFiles(e.target.files); e.target.value = ''; });
 
-/* Keyboard accessibility for the label-as-button triggers: Enter/Space
-   calls .click() on the LABEL (native forwarding), never on the input
-   directly, which keeps this on the same trusted code path as a real tap. */
 function wireLabelKeyboardTrigger(id){
   const el = document.getElementById(id);
   if (!el) return;
@@ -1822,9 +1934,6 @@ document.getElementById('btnClearAll').addEventListener('click', async () => {
   }
 });
 
-/* Drag & drop anywhere on the window — doesn't depend on the file
-   picker API at all, so it remains a reliable fallback regardless
-   of any sandbox restriction on <input type="file">. */
 let dragCounter = 0;
 window.addEventListener('dragenter', (e) => {
   e.preventDefault();
@@ -1844,7 +1953,6 @@ window.addEventListener('drop', (e) => {
   if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
 });
 
-/* Keyboard shortcuts */
 document.addEventListener('keydown', (e) => {
   const settingsModalEl = document.getElementById('settingsModal');
   if (e.code === 'Escape' && !settingsModalEl.hidden) { closeSettingsModal(); return; }
@@ -1856,13 +1964,12 @@ document.addEventListener('keydown', (e) => {
 });
 
 /* Media Session action handlers (lock screen / control center).
-   Each is registered independently with its own try/catch so that
-   one action type unsupported by a given browser can never prevent
-   the others from being wired up. Every handler first attempts to
-   resume a suspended AudioContext — a lock-screen/control-center
-   tap is treated by iOS similarly to a direct user gesture, making
-   this one of the most reliable moments to recover a suspended
-   audio pipeline if effects are engaged. */
+   Each is registered independently with its own try/catch so one
+   unsupported action can never prevent the others from being wired.
+   Every handler first calls resumeAudioPipelineIfSuspended() — a
+   lock-screen/control-center tap is treated by iOS similarly to a
+   direct user gesture, making this one of the most reliable moments
+   to recover (or gracefully fall back from) a suspended pipeline. */
 if ('mediaSession' in navigator) {
   const setHandler = (action, handler) => {
     try {
@@ -1904,17 +2011,18 @@ if ('mediaSession' in navigator) {
    iOS AUDIO UNLOCK & BACKGROUND RESILIENCE
 
    1) First-touch unlock: primes the <audio> element and, if a Web
-      Audio graph already happens to exist, resumes it — all inside
-      the very first real user gesture on the page, which is what
-      iOS requires before it will honor programmatic audio control
-      later (including from a lock-screen control tap).
+      Audio graph already exists, resumes it — inside the very first
+      real user gesture on the page, which is what iOS requires
+      before it will reliably honor programmatic audio control later
+      (including from a lock-screen control tap).
    2) Foreground recovery: resumes a suspended AudioContext whenever
-      the page becomes visible/focused again.
-   3) Opportunistic keep-alive: while a track is playing, periodically
-      checks whether the AudioContext needs resuming. This can only
-      act when the page is actually given CPU time by the OS — it is
-      a best-effort mitigation, not a guarantee, since iOS can and
-      does fully suspend a backgrounded page's JavaScript.
+      the page becomes visible/focused again (document.visibilitychange,
+      pageshow, focus).
+   3) Keep-alive loop: while a track is playing, periodically checks
+      whether the AudioContext needs resuming or has become stuck.
+      This can only act when the page is actually given CPU time by
+      the OS — a best-effort recovery loop, not a guarantee, since
+      iOS can fully suspend a backgrounded page's JavaScript.
    ========================================================= */
 function unlockAudio(){
   if (audioUnlocked) return;
@@ -1924,12 +2032,13 @@ function unlockAudio(){
 
   resumeAudioPipelineIfSuspended();
 
-  if (audio.getAttribute('src')) {
+  try {
     const wasPlaying = !audio.paused;
-    audio.play().then(() => {
-      if (!wasPlaying) audio.pause();
-    }).catch(() => {});
-  }
+    const p = audio.play();
+    if (p && typeof p.then === 'function') {
+      p.then(() => { if (!wasPlaying) audio.pause(); }).catch(() => {});
+    }
+  } catch (e) {}
 }
 document.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
 document.addEventListener('click', unlockAudio, { once: true, passive: true });
@@ -1942,13 +2051,10 @@ window.addEventListener('focus', () => resumeAudioPipelineIfSuspended());
 
 setInterval(() => {
   if (isPlaying) resumeAudioPipelineIfSuspended();
-}, 15000);
+}, 10000);
 
-/* iOS "Add to Home Screen" hint — skipped under data:/blob:, where
-   Add to Home Screen either isn't offered or wouldn't produce a
-   stable, reusable shortcut anyway. */
+/* iOS "Add to Home Screen" hint. */
 function checkIOSInstallPrompt(){
-  if (IS_OPAQUE_ORIGIN) return;
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
   const isStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
   if (isIOS && !isStandalone && !safeStorage.get('iosInstallDismissed')) {
@@ -2004,7 +2110,6 @@ document.querySelectorAll('.modal-tab').forEach(btn => {
 document.getElementById('btnResetEQ').addEventListener('click', resetEQ);
 
 document.getElementById('bassToggle').addEventListener('change', (e) => {
-  // Only engage the graph when actually turning bass ON.
   if (e.target.checked) ensureAudioContext();
   setBassEnabled(e.target.checked);
 });
@@ -2016,7 +2121,6 @@ document.getElementById('bassSlider').addEventListener('input', (e) => {
   setBassGain(v);
 });
 document.getElementById('reverbToggle').addEventListener('change', (e) => {
-  // Only engage the graph when actually turning reverb ON.
   if (e.target.checked) ensureAudioContext();
   setReverbEnabled(e.target.checked);
 });
