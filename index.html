@@ -612,6 +612,7 @@ input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:#4d4
       <div class="modal-body">
 
         <section class="tab-panel" data-panel="sound">
+          <div class="settings-note">Turning on EQ, Bass Boost, or Reverb activates enhanced audio processing. Because of how iOS manages power in the background, playback with these effects on may pause when the app is locked or backgrounded. Leave effects off for the most reliable background and lock-screen playback.</div>
           <div class="settings-note" id="soundUnavailableNote" hidden>Advanced audio effects aren't supported in this browser — playback will continue normally without them.</div>
 
           <div class="settings-section">
@@ -717,8 +718,22 @@ let repeatMode = 'off';   // off | all | one
 let lastVolume = 80;
 let rafId = null;
 let isSeeking = false;
-const audio = new Audio();
-audio.preload = 'metadata';
+let audioUnlocked = false;
+
+/* The <audio> element is created via JS but deliberately attached to
+   the DOM (hidden) rather than left detached. Some iOS Safari versions
+   are more consistent about maintaining a background audio session for
+   elements that are part of the render tree. playsinline attributes are
+   primarily a <video> concern but are included defensively — they are
+   harmless no-ops for <audio>. preload is 'auto' since sources are
+   local blob: URLs anyway (no real network cost) and fuller buffering
+   reduces the chance of a stall-triggered pause. */
+const audio = document.createElement('audio');
+audio.preload = 'auto';
+audio.setAttribute('playsinline', '');
+audio.setAttribute('webkit-playsinline', '');
+audio.style.display = 'none';
+document.body.appendChild(audio);
 
 const DB_NAME = 'OfflineAudioPlayerDB';
 const DB_VERSION = 1;
@@ -1091,6 +1106,19 @@ async function updateStorageInfo(){
 
 /* =========================================================
    WEB AUDIO ENGINE — 5-band EQ, Bass Boost, Reverb / 3D
+
+   IMPORTANT (background playback): once an <audio> element is
+   routed through createMediaElementSource(), ALL of its output
+   must flow through the AudioContext from then on — there is no
+   way to "unhook" it later in the same session. iOS aggressively
+   suspends AudioContexts in the background to save power, which
+   silently kills audio that depends on one. To keep background /
+   lock-screen playback reliable for the common case, this graph
+   is created LAZILY — only the first time the user actually turns
+   on an effect (a non-zero EQ band, Bass Boost, or Reverb) — never
+   just from opening Settings, and never unconditionally on every
+   play(). If no effect is ever engaged in a session, audio plays
+   directly through the plain <audio> element the whole time.
    ========================================================= */
 const EQ_BANDS = [60, 230, 910, 4000, 14000];
 let audioCtx = null;
@@ -1118,6 +1146,12 @@ function loadSoundSettings(){
 }
 function saveSoundSettings(){
   try { safeStorage.set('soundSettings', JSON.stringify(soundSettings)); } catch (e) {}
+}
+
+/* True if any effect is currently configured to be "on" — used to
+   decide whether the Web Audio graph needs to be engaged at all. */
+function effectsActive(){
+  return soundSettings.bassEnabled || soundSettings.reverbEnabled || soundSettings.eq.some(v => v !== 0);
 }
 
 function createImpulseResponse(ctx, duration, decay){
@@ -1207,6 +1241,19 @@ function ensureAudioContext(){
   }
 }
 
+/* Opportunistically resumes the AudioContext if it exists and has
+   been suspended (typically by iOS's background power management).
+   Safe to call at any time — a no-op when there is no graph yet or
+   the context is already running. This can only take effect when
+   the page actually gets a slice of CPU time (foregrounding, a
+   lock-screen control tap, or a brief OS-granted wake window) —
+   it cannot force iOS to keep a fully backgrounded page running. */
+function resumeAudioPipelineIfSuspended(){
+  if (audioGraphReady && audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume().catch(() => {});
+  }
+}
+
 function setEQGain(index, value){
   soundSettings.eq[index] = value;
   if (audioGraphReady && eqFilters[index]) eqFilters[index].gain.value = value;
@@ -1270,7 +1317,11 @@ function renderEQSliders(){
       const p = ((v + 12) / 24) * 100;
       input.style.setProperty('--pct', p + '%');
       valueLabel.textContent = (v > 0 ? '+' : '') + v.toFixed(0);
-      ensureAudioContext();
+      // Only engage the Web Audio graph when the band is actually
+      // moved away from 0 — keeps merely opening Settings, or
+      // dragging back to 0, from needlessly giving up the
+      // background-safe direct <audio> playback path.
+      if (v !== 0) ensureAudioContext();
       setEQGain(i, v);
     });
     container.appendChild(band);
@@ -1478,7 +1529,14 @@ function loadTrack(index, autoplay){
   else updatePlayPauseUI();
 }
 function playAudio(){
-  ensureAudioContext();
+  // Only route through the Web Audio graph if an effect is actually
+  // configured on, or the graph already exists from earlier in this
+  // session (it can't be "un-hooked" once created). Otherwise this
+  // stays a plain <audio>.play() call, which is the path iOS keeps
+  // running reliably in the background and on the lock screen.
+  if (effectsActive() || audioGraphReady) ensureAudioContext();
+  resumeAudioPipelineIfSuspended();
+
   audio.play().then(() => {
     isPlaying = true;
     updatePlayPauseUI();
@@ -1639,6 +1697,31 @@ audio.addEventListener('loadedmetadata', () => {
   if (!isSeeking) updateSeekUI();
   updateMediaSessionPositionState();
 });
+/* Safety nets: if iOS pauses/resumes the element itself outside of
+   our own playAudio()/pauseAudio() calls (e.g. forced by the OS
+   while backgrounded, or resumed via a system media control we
+   didn't directly route through), keep isPlaying, the play/pause
+   icon, and mediaSession.playbackState honest with reality. */
+audio.addEventListener('pause', () => {
+  if (isPlaying) {
+    isPlaying = false;
+    updatePlayPauseUI();
+    stopProgressLoop();
+    if ('mediaSession' in navigator) {
+      try { navigator.mediaSession.playbackState = 'paused'; } catch (e) {}
+    }
+  }
+});
+audio.addEventListener('play', () => {
+  if (!isPlaying) {
+    isPlaying = true;
+    updatePlayPauseUI();
+    startProgressLoop();
+    if ('mediaSession' in navigator) {
+      try { navigator.mediaSession.playbackState = 'playing'; } catch (e) {}
+    }
+  }
+});
 
 document.getElementById('btnPlayPause').addEventListener('click', togglePlayPause);
 document.getElementById('btnNext').addEventListener('click', nextTrack);
@@ -1775,11 +1858,19 @@ document.addEventListener('keydown', (e) => {
 /* Media Session action handlers (lock screen / control center).
    Each is registered independently with its own try/catch so that
    one action type unsupported by a given browser can never prevent
-   the others from being wired up. */
+   the others from being wired up. Every handler first attempts to
+   resume a suspended AudioContext — a lock-screen/control-center
+   tap is treated by iOS similarly to a direct user gesture, making
+   this one of the most reliable moments to recover a suspended
+   audio pipeline if effects are engaged. */
 if ('mediaSession' in navigator) {
   const setHandler = (action, handler) => {
-    try { navigator.mediaSession.setActionHandler(action, handler); }
-    catch (e) { /* action not supported in this browser — safe to ignore */ }
+    try {
+      navigator.mediaSession.setActionHandler(action, (details) => {
+        resumeAudioPipelineIfSuspended();
+        handler(details);
+      });
+    } catch (e) { /* action not supported in this browser — safe to ignore */ }
   };
   setHandler('play', playAudio);
   setHandler('pause', pauseAudio);
@@ -1808,6 +1899,50 @@ if ('mediaSession' in navigator) {
     }
   });
 }
+
+/* =========================================================
+   iOS AUDIO UNLOCK & BACKGROUND RESILIENCE
+
+   1) First-touch unlock: primes the <audio> element and, if a Web
+      Audio graph already happens to exist, resumes it — all inside
+      the very first real user gesture on the page, which is what
+      iOS requires before it will honor programmatic audio control
+      later (including from a lock-screen control tap).
+   2) Foreground recovery: resumes a suspended AudioContext whenever
+      the page becomes visible/focused again.
+   3) Opportunistic keep-alive: while a track is playing, periodically
+      checks whether the AudioContext needs resuming. This can only
+      act when the page is actually given CPU time by the OS — it is
+      a best-effort mitigation, not a guarantee, since iOS can and
+      does fully suspend a backgrounded page's JavaScript.
+   ========================================================= */
+function unlockAudio(){
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  document.removeEventListener('touchstart', unlockAudio);
+  document.removeEventListener('click', unlockAudio);
+
+  resumeAudioPipelineIfSuspended();
+
+  if (audio.getAttribute('src')) {
+    const wasPlaying = !audio.paused;
+    audio.play().then(() => {
+      if (!wasPlaying) audio.pause();
+    }).catch(() => {});
+  }
+}
+document.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
+document.addEventListener('click', unlockAudio, { once: true, passive: true });
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') resumeAudioPipelineIfSuspended();
+});
+window.addEventListener('pageshow', () => resumeAudioPipelineIfSuspended());
+window.addEventListener('focus', () => resumeAudioPipelineIfSuspended());
+
+setInterval(() => {
+  if (isPlaying) resumeAudioPipelineIfSuspended();
+}, 15000);
 
 /* iOS "Add to Home Screen" hint — skipped under data:/blob:, where
    Add to Home Screen either isn't offered or wouldn't produce a
@@ -1844,7 +1979,8 @@ document.getElementById('btnInstall').addEventListener('click', async () => {
    SETTINGS MODAL (Sound + Appearance)
    ========================================================= */
 function openSettingsModal(tab){
-  ensureAudioContext();
+  // Deliberately does NOT call ensureAudioContext() — merely opening
+  // Settings should never engage the Web Audio graph on its own.
   document.getElementById('settingsModal').hidden = false;
   document.body.style.overflow = 'hidden';
   if (tab) switchSettingsTab(tab);
@@ -1868,25 +2004,27 @@ document.querySelectorAll('.modal-tab').forEach(btn => {
 document.getElementById('btnResetEQ').addEventListener('click', resetEQ);
 
 document.getElementById('bassToggle').addEventListener('change', (e) => {
-  ensureAudioContext();
+  // Only engage the graph when actually turning bass ON.
+  if (e.target.checked) ensureAudioContext();
   setBassEnabled(e.target.checked);
 });
 document.getElementById('bassSlider').addEventListener('input', (e) => {
   const v = Number(e.target.value);
   document.getElementById('bassValueLabel').textContent = `+${v.toFixed(1)} dB`;
   e.target.style.setProperty('--pct', ((v / 12) * 100) + '%');
-  ensureAudioContext();
+  if (soundSettings.bassEnabled) ensureAudioContext();
   setBassGain(v);
 });
 document.getElementById('reverbToggle').addEventListener('change', (e) => {
-  ensureAudioContext();
+  // Only engage the graph when actually turning reverb ON.
+  if (e.target.checked) ensureAudioContext();
   setReverbEnabled(e.target.checked);
 });
 document.getElementById('reverbSlider').addEventListener('input', (e) => {
   const v = Number(e.target.value);
   document.getElementById('reverbValueLabel').textContent = v + '%';
   e.target.style.setProperty('--pct', v + '%');
-  ensureAudioContext();
+  if (soundSettings.reverbEnabled) ensureAudioContext();
   setReverbAmount(v);
 });
 
