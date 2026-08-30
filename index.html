@@ -6,11 +6,6 @@
 <title>BDPLAYER</title>
 <meta name="description" content="BDPLAYER — a sleek, offline-capable audio player that stores your music locally in the browser, with pure high-fidelity playback.">
 <meta name="theme-color" content="#000000">
-<meta name="mobile-web-app-capable" content="yes">
-<!-- iOS PWA / full-screen support -->
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="BDPLAYER">
 <meta name="format-detection" content="telephone=no">
 <style>
 :root{
@@ -49,24 +44,6 @@ body{
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:#3a3a3a;border-radius:5px;}
 ::-webkit-scrollbar-thumb:hover{background:#4f4f4f;}
-
-/* ---------- iOS install banner ---------- */
-.ios-install-banner{
-  background:var(--accent);
-  color:var(--accent-contrast);
-  font-size:13px;
-  font-weight:600;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:12px;
-  padding:8px 14px;
-  padding-top:calc(8px + env(safe-area-inset-top));
-  z-index:70;
-}
-.ios-install-banner button{
-  background:none;border:none;color:var(--accent-contrast);font-size:16px;font-weight:700;cursor:pointer;line-height:1;padding:4px;
-}
 
 /* ---------- Header ---------- */
 .app-header{
@@ -386,7 +363,10 @@ input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:#4d4
 .theme-swatch.active{border-color:#fff;}
 .theme-swatch.active .swatch-check{opacity:1;}
 .theme-name-hint{font-size:11px;color:var(--text-tertiary);margin-top:12px;line-height:1.5;}
-.offline-status{font-size:11px;color:var(--text-tertiary);margin-top:20px;padding-top:16px;border-top:1px solid var(--border);line-height:1.5;}
+.status-block{margin-top:20px;padding-top:16px;border-top:1px solid var(--border);}
+.status-line{font-size:11px;color:var(--text-tertiary);line-height:1.5;margin-bottom:8px;}
+.status-line:last-child{margin-bottom:0;}
+.status-line strong{color:var(--text-secondary);font-weight:700;}
 
 /* ---------- Responsive ---------- */
 @media (max-width:768px){
@@ -413,11 +393,6 @@ input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:#4d4
 <body>
 <div id="app">
 
-  <div class="ios-install-banner" id="iosInstallBanner" hidden>
-    <span>Install this app: tap <strong>Share</strong> → <strong>Add to Home Screen</strong> for offline use.</span>
-    <button id="iosInstallDismiss" aria-label="Dismiss">✕</button>
-  </div>
-
   <header class="app-header">
     <div class="header-top">
       <div class="brand">
@@ -425,11 +400,7 @@ input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:#4d4
         <h1>BD<span>PLAYER</span></h1>
       </div>
       <div class="header-actions">
-        <button id="btnInstall" class="btn btn-secondary" hidden>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Install App
-        </button>
-        <button id="btnSettings" class="btn btn-secondary" title="Theme" aria-label="Theme settings">
+        <button id="btnSettings" class="btn btn-secondary" title="Theme &amp; status" aria-label="Theme and status">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/></svg>
           Theme
         </button>
@@ -462,7 +433,7 @@ input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:#4d4
     <div class="empty-state" id="emptyState">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
       <h2>Your library is empty</h2>
-      <p>Add music files or an entire folder to get started. Everything is stored locally in your browser and works completely offline — even after closing the app.</p>
+      <p>Add music files or an entire folder to get started. Everything is stored locally in your browser and plays back offline.</p>
       <!-- Add Music (empty state) trigger: native <label for> binding -->
       <label id="btnAddFilesEmpty" for="fileInput" class="btn btn-primary" tabindex="0" role="button" aria-label="Add music">Add Music</label>
     </div>
@@ -519,7 +490,7 @@ input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:#4d4
   <div class="drop-overlay" id="dropOverlay"><p>Drop audio files to add them</p></div>
   <div class="toast" id="toast"></div>
 
-  <!-- Theme Modal -->
+  <!-- Theme + status modal -->
   <div class="modal-overlay" id="settingsModal" hidden>
     <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
       <div class="modal-header">
@@ -534,7 +505,10 @@ input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:#4d4
           <div class="theme-swatches" id="themeSwatches"></div>
           <p class="theme-name-hint" id="themeNameHint"></p>
         </div>
-        <p class="offline-status" id="offlineStatus"></p>
+        <div class="status-block">
+          <p class="status-line" id="offlineStatus"></p>
+          <p class="status-line" id="persistStatus"></p>
+        </div>
       </div>
     </div>
   </div>
@@ -564,6 +538,10 @@ const safeStorage = {
   },
   set(key, value){
     try { localStorage.setItem(key, value); return true; }
+    catch (e) { return false; }
+  },
+  remove(key){
+    try { localStorage.removeItem(key); return true; }
     catch (e) { return false; }
   }
 };
@@ -596,16 +574,19 @@ let rafId = null;
 let isSeeking = false;
 let audioUnlocked = false;
 let offlineReady = false;
+let persistGranted = null; // null = unknown/unsupported, true/false = actual result
+let lastPositionSave = 0;
 
 /* =========================================================
    AUDIO ELEMENT
-   A single, permanent HTML5 <audio> element. Nothing in this
-   app ever routes it through AudioContext or any other node
-   graph — audio.src plays directly to the OS, at full source
-   fidelity, with zero processing overhead. This is also what
-   makes background/lock-screen playback maximally reliable on
-   iOS: a plain <audio> element with a proper Media Session is
-   a native, first-class capability.
+   A single, permanent HTML5 <audio> element. Nothing routes
+   it through AudioContext or any node graph — audio.src plays
+   directly to the OS at full source fidelity, with zero
+   processing overhead. This is also what makes background and
+   lock-screen playback reliable in an iOS Safari tab: a plain
+   <audio> element paired with Media Session metadata is a
+   native, first-class capability, with no DSP pipeline for
+   iOS to suspend.
    ========================================================= */
 const audio = document.createElement('audio');
 audio.preload = 'auto';
@@ -660,7 +641,7 @@ function applyAccentColor(hex, persist){
   root.setProperty('--accent-rgb', hexToRgb(hex));
   if (persist) {
     safeStorage.set('accentColor', hex);
-    setupIconsAndManifest();
+    generateArtwork();
   }
   renderThemeSwatches();
 }
@@ -841,12 +822,12 @@ function showToast(msg, isError){
 }
 
 /* =========================================================
-   ICON GENERATION (Canvas -> PNG data URIs)
-   Generated locally at runtime — no network fetch, so icons
-   and artwork are available offline on the very first launch.
+   ARTWORK GENERATION (Canvas -> PNG data URI)
+   Generated locally at runtime — no network fetch — so the
+   lock-screen artwork is available offline on first launch.
    ========================================================= */
-let appIconDataUrl192 = '';
-let appIconDataUrl512 = '';
+let artwork192 = '';
+let artwork512 = '';
 function roundRectPath(ctx, x, y, w, h, r){
   ctx.beginPath();
   ctx.moveTo(x + r, y);
@@ -856,7 +837,7 @@ function roundRectPath(ctx, x, y, w, h, r){
   ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
 }
-function generateIcon(size){
+function generateArtworkImage(size){
   const canvas = document.createElement('canvas');
   canvas.width = size; canvas.height = size;
   const ctx = canvas.getContext('2d');
@@ -873,75 +854,56 @@ function generateIcon(size){
   ctx.fillText('♪', size / 2, size * 0.56);
   return canvas.toDataURL('image/png');
 }
-function setLinkTag(rel, href){
+function generateArtwork(){
   try {
-    let link = document.querySelector(`link[rel="${rel}"]`);
-    if (!link) { link = document.createElement('link'); link.rel = rel; document.head.appendChild(link); }
-    link.href = href;
-  } catch (e) {}
-}
-function setupIconsAndManifest(){
-  try {
-    const icon180 = generateIcon(180);
-    const icon192 = generateIcon(192);
-    const icon512 = generateIcon(512);
-    appIconDataUrl192 = icon192;
-    appIconDataUrl512 = icon512;
-    setLinkTag('icon', icon192);
-    setLinkTag('apple-touch-icon', icon180);
-
-    /* Inline manifest as a data: URL — no separate manifest file to
-       fetch, so nothing here can fail when offline. start_url and
-       scope are absolute because relative URLs in a data: manifest
-       have no same-origin base to resolve against. */
-    const manifest = {
-      name: 'BDPLAYER',
-      short_name: 'BDPLAYER',
-      description: 'A sleek, offline-capable audio player that stores your music locally in the browser, with pure high-fidelity playback.',
-      start_url: 'https://liwozwa.github.io/bdplayer/',
-      scope: 'https://liwozwa.github.io/bdplayer/',
-      display: 'standalone',
-      background_color: '#000000',
-      theme_color: '#000000',
-      orientation: 'portrait-primary',
-      icons: [
-        { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
-        { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
-      ]
-    };
-    setLinkTag('manifest', 'data:application/manifest+json;charset=utf-8,' + encodeURIComponent(JSON.stringify(manifest)));
+    artwork192 = generateArtworkImage(192);
+    artwork512 = generateArtworkImage(512);
+    // Favicon for the Safari tab.
+    let link = document.querySelector('link[rel="icon"]');
+    if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
+    link.href = artwork192;
+    // Refresh lock-screen artwork if something is already loaded.
+    if (currentIndex >= 0 && tracks[currentIndex]) updateMediaSession(tracks[currentIndex]);
   } catch (err) {
-    console.warn('Icon/manifest setup failed:', err);
+    console.warn('Artwork generation failed:', err);
   }
 }
 
 /* =========================================================
-   SERVICE WORKER — the piece that makes offline launches work.
-
-   IMPORTANT: the worker script must be a REAL same-origin file
-   served with a JavaScript MIME type. Blob and data: URLs are
-   rejected by the spec (that is why an earlier blob-based
-   registration silently never took effect and nothing was ever
-   cached). Deploy sw.js next to index.html:
-       https://liwozwa.github.io/bdplayer/sw.js
-   Because all CSS and JS here are inline, sw.js only ever needs
-   to cache this one document for the whole app to work offline.
+   SERVICE WORKER
+   Registers ./sw.js (a real same-origin file — blob: and data:
+   URLs are rejected by the spec, which is why an inline worker
+   can never register). This is what lets the app open with no
+   network in a Safari tab.
    ========================================================= */
-function updateOfflineStatusUI(){
-  const el = document.getElementById('offlineStatus');
-  if (!el) return;
-  if (!('serviceWorker' in navigator)) {
-    el.textContent = 'Offline mode: not supported by this browser.';
-  } else if (offlineReady || navigator.serviceWorker.controller) {
-    el.textContent = 'Offline mode: ready. The app will open without a connection.';
-  } else {
-    el.textContent = 'Offline mode: setting up. Reload once while online to finish.';
+function updateStatusUI(){
+  const offlineEl = document.getElementById('offlineStatus');
+  const persistEl = document.getElementById('persistStatus');
+
+  if (offlineEl) {
+    if (!('serviceWorker' in navigator)) {
+      offlineEl.innerHTML = '<strong>Offline mode:</strong> not supported by this browser.';
+    } else if (offlineReady || navigator.serviceWorker.controller) {
+      offlineEl.innerHTML = '<strong>Offline mode:</strong> ready — this page opens without a connection.';
+    } else {
+      offlineEl.innerHTML = '<strong>Offline mode:</strong> setting up. Reload once while online to finish.';
+    }
+  }
+
+  if (persistEl) {
+    if (persistGranted === true) {
+      persistEl.innerHTML = '<strong>Storage:</strong> persistent — your library is protected from automatic cleanup.';
+    } else if (persistGranted === false) {
+      persistEl.innerHTML = '<strong>Storage:</strong> not persistent. iOS Safari may clear saved music if you don\u2019t open this page for about a week. Keep your original files backed up elsewhere.';
+    } else {
+      persistEl.innerHTML = '<strong>Storage:</strong> persistence unavailable in this browser. Keep your original files backed up elsewhere.';
+    }
   }
 }
 
 function registerServiceWorker(){
-  if (!('serviceWorker' in navigator)) { updateOfflineStatusUI(); return; }
-  if (location.protocol !== 'https:' && location.hostname !== 'localhost') { updateOfflineStatusUI(); return; }
+  if (!('serviceWorker' in navigator)) { updateStatusUI(); return; }
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost') { updateStatusUI(); return; }
 
   navigator.serviceWorker.register('./sw.js', { scope: './' })
     .then((reg) => {
@@ -949,7 +911,7 @@ function registerServiceWorker(){
 
       navigator.serviceWorker.ready.then(() => {
         offlineReady = true;
-        updateOfflineStatusUI();
+        updateStatusUI();
         if (firstInstall) showToast('Ready to use offline');
       });
 
@@ -958,7 +920,7 @@ function registerServiceWorker(){
         if (!incoming) return;
         incoming.addEventListener('statechange', () => {
           if (incoming.state === 'installed' && navigator.serviceWorker.controller) {
-            showToast('Update installed — reopen to apply');
+            showToast('Update ready — reload to apply');
           }
         });
       });
@@ -969,20 +931,34 @@ function registerServiceWorker(){
         'Confirm sw.js is deployed alongside index.html at the same path.',
         err
       );
-      updateOfflineStatusUI();
+      updateStatusUI();
     });
 
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     offlineReady = true;
-    updateOfflineStatusUI();
+    updateStatusUI();
   });
 }
 
+/* Requests storage persistence. On iOS Safari this typically
+   resolves false for ordinary browser tabs — the real result is
+   surfaced in the Theme panel rather than assumed, so a library
+   at risk of eviction is never a silent surprise. Re-requested
+   after imports, since some engines weigh actual stored data. */
 async function requestPersistentStorage(){
-  if (navigator.storage && navigator.storage.persist) {
-    try { await navigator.storage.persist(); } catch (e) {}
+  if (!navigator.storage || !navigator.storage.persist) { persistGranted = null; updateStatusUI(); return; }
+  try {
+    if (navigator.storage.persisted) {
+      const already = await navigator.storage.persisted();
+      if (already) { persistGranted = true; updateStatusUI(); return; }
+    }
+    persistGranted = await navigator.storage.persist();
+  } catch (e) {
+    persistGranted = null;
   }
+  updateStatusUI();
 }
+
 async function updateStorageInfo(){
   const el = document.getElementById('storageInfo');
   if (!navigator.storage || !navigator.storage.estimate) { el.textContent = ''; return; }
@@ -1076,6 +1052,7 @@ async function deleteTrack(rawId){
     pauseAudio();
     audio.removeAttribute('src');
     currentIndex = -1;
+    clearSavedPosition();
     updateNowPlayingUI(null);
   } else if (idx < currentIndex) {
     currentIndex--;
@@ -1156,6 +1133,45 @@ document.getElementById('trackListBody').addEventListener('click', (e) => {
 });
 
 /* =========================================================
+   PLAYBACK POSITION PERSISTENCE
+   A Safari tab can be discarded under memory pressure while
+   backgrounded — no API prevents that. Saving the current
+   track and position means a discarded-and-reloaded tab
+   resumes where it left off instead of returning empty.
+   ========================================================= */
+function savePosition(){
+  if (currentIndex < 0 || !tracks[currentIndex]) return;
+  const t = tracks[currentIndex];
+  safeStorage.set('lastPlayback', JSON.stringify({
+    name: t.name,
+    size: t.size,
+    time: audio.currentTime || 0
+  }));
+}
+function clearSavedPosition(){ safeStorage.remove('lastPlayback'); }
+function restoreLastPosition(){
+  let saved = null;
+  try { saved = JSON.parse(safeStorage.get('lastPlayback', 'null')); } catch (e) { return; }
+  if (!saved || !saved.name) return;
+  const idx = tracks.findIndex(t => t.name === saved.name && t.size === saved.size);
+  if (idx === -1) return;
+  // Load without autoplay — iOS requires a user gesture to start
+  // audio, so restoring paused at the right spot is the correct
+  // (and only reliable) behavior here.
+  loadTrack(idx, false);
+  const seekTo = Number(saved.time) || 0;
+  if (seekTo > 0) {
+    const applySeek = () => {
+      try { audio.currentTime = seekTo; } catch (e) {}
+      updateSeekUI();
+      updateMediaSessionPositionState();
+    };
+    if (audio.readyState >= 1) applySeek();
+    else audio.addEventListener('loadedmetadata', applySeek, { once: true });
+  }
+}
+
+/* =========================================================
    PLAYBACK ENGINE
    ========================================================= */
 function loadTrack(index, autoplay){
@@ -1167,6 +1183,7 @@ function loadTrack(index, autoplay){
   updateNowPlayingUI(track);
   renderTrackList(document.getElementById('searchInput').value);
   updateMediaSession(track);
+  savePosition();
   if (autoplay) playAudio();
   else updatePlayPauseUI();
 }
@@ -1189,6 +1206,7 @@ function pauseAudio(){
   isPlaying = false;
   updatePlayPauseUI();
   stopProgressLoop();
+  savePosition();
   if ('mediaSession' in navigator) {
     try { navigator.mediaSession.playbackState = 'paused'; } catch (e) {}
   }
@@ -1232,7 +1250,12 @@ function prevTrack(){
 
 function startProgressLoop(){
   cancelAnimationFrame(rafId);
-  const step = () => { if (!isSeeking) updateSeekUI(); rafId = requestAnimationFrame(step); };
+  const step = () => {
+    if (!isSeeking) updateSeekUI();
+    const now = Date.now();
+    if (now - lastPositionSave > 5000) { lastPositionSave = now; savePosition(); }
+    rafId = requestAnimationFrame(step);
+  };
   rafId = requestAnimationFrame(step);
 }
 function stopProgressLoop(){ cancelAnimationFrame(rafId); }
@@ -1283,14 +1306,17 @@ function updateVolumeIcon(v){
 }
 
 /* =========================================================
-   MEDIA SESSION — lock screen / control center integration
+   MEDIA SESSION — lock screen / control center integration.
+   This is what keeps a backgrounded Safari tab's audio alive
+   and controllable from the lock screen, so it is refreshed
+   on every track change and state change.
    ========================================================= */
 function updateMediaSession(track){
   if (!('mediaSession' in navigator)) return;
   try {
     const artwork = [];
-    if (appIconDataUrl192) artwork.push({ src: appIconDataUrl192, sizes: '192x192', type: 'image/png' });
-    if (appIconDataUrl512) artwork.push({ src: appIconDataUrl512, sizes: '512x512', type: 'image/png' });
+    if (artwork192) artwork.push({ src: artwork192, sizes: '192x192', type: 'image/png' });
+    if (artwork512) artwork.push({ src: artwork512, sizes: '512x512', type: 'image/png' });
     navigator.mediaSession.metadata = new MediaMetadata({
       title: track.title,
       artist: track.artist,
@@ -1325,14 +1351,16 @@ audio.addEventListener('loadedmetadata', () => {
   if (!isSeeking) updateSeekUI();
   updateMediaSessionPositionState();
 });
-/* Safety nets: if iOS pauses/resumes the element itself outside of
-   our own playAudio()/pauseAudio() calls, keep isPlaying, the
-   play/pause icon, and mediaSession.playbackState honest. */
+/* Safety nets: if iOS pauses or resumes the element itself outside
+   of our own playAudio()/pauseAudio() calls (an interruption, a
+   system media control), keep isPlaying, the play/pause icon, and
+   mediaSession.playbackState honest with reality. */
 audio.addEventListener('pause', () => {
   if (isPlaying) {
     isPlaying = false;
     updatePlayPauseUI();
     stopProgressLoop();
+    savePosition();
     if ('mediaSession' in navigator) {
       try { navigator.mediaSession.playbackState = 'paused'; } catch (e) {}
     }
@@ -1380,6 +1408,7 @@ seekBar.addEventListener('change', () => {
   const dur = audio.duration || 0;
   audio.currentTime = (seekBar.value / 100) * dur;
   isSeeking = false;
+  savePosition();
   updateMediaSessionPositionState();
 });
 
@@ -1403,7 +1432,8 @@ document.getElementById('btnVolumeIcon').addEventListener('click', () => {
 });
 
 /* File inputs: opening the picker is handled natively via the
-   <label for="..."> elements in the HTML — no JS .click() proxy. */
+   <label for="..."> elements in the HTML — no JS .click() proxy,
+   which is what keeps the picker reliable on iOS. */
 document.getElementById('fileInput').addEventListener('change', (e) => { handleFiles(e.target.files); e.target.value = ''; });
 document.getElementById('folderInput').addEventListener('change', (e) => { handleFiles(e.target.files); e.target.value = ''; });
 
@@ -1433,6 +1463,7 @@ document.getElementById('btnClearAll').addEventListener('click', async () => {
     currentIndex = -1;
     pauseAudio();
     audio.removeAttribute('src');
+    clearSavedPosition();
     updateNowPlayingUI(null);
     renderTrackList();
     updateTrackCount();
@@ -1444,7 +1475,7 @@ document.getElementById('btnClearAll').addEventListener('click', async () => {
   }
 });
 
-/* Drag & drop anywhere on the window. */
+/* Drag & drop anywhere on the window (desktop convenience). */
 let dragCounter = 0;
 window.addEventListener('dragenter', (e) => {
   e.preventDefault();
@@ -1482,7 +1513,7 @@ document.addEventListener('keydown', (e) => {
 if ('mediaSession' in navigator) {
   const setHandler = (action, handler) => {
     try { navigator.mediaSession.setActionHandler(action, handler); }
-    catch (e) { /* action not supported in this browser — safe to ignore */ }
+    catch (e) { /* action not supported here — safe to ignore */ }
   };
   setHandler('play', playAudio);
   setHandler('pause', pauseAudio);
@@ -1516,8 +1547,8 @@ if ('mediaSession' in navigator) {
    iOS AUDIO UNLOCK
    Primes the <audio> element inside the very first real user
    gesture on the page, which is what iOS requires before it
-   will reliably honor programmatic audio control later —
-   including from a lock-screen control tap.
+   will honor programmatic audio control later — including
+   from a lock-screen control tap.
    ========================================================= */
 function unlockAudio(){
   if (audioUnlocked) return;
@@ -1536,39 +1567,45 @@ function unlockAudio(){
 document.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
 document.addEventListener('click', unlockAudio, { once: true, passive: true });
 
-/* iOS "Add to Home Screen" hint. */
-function checkIOSInstallPrompt(){
-  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
-  const isStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
-  if (isIOS && !isStandalone && !safeStorage.get('iosInstallDismissed')) {
-    document.getElementById('iosInstallBanner').hidden = false;
+/* =========================================================
+   VISIBILITY / LIFECYCLE
+   Returning to a backgrounded tab: resync the UI to whatever
+   the audio element actually did while hidden (iOS may have
+   paused it for an interruption such as a call), and refresh
+   the Media Session position so the lock-screen scrubber stays
+   accurate. Playback is never force-restarted here — if iOS or
+   the user paused it, silently resuming would be wrong.
+   ========================================================= */
+function syncStateFromAudioElement(){
+  const actuallyPlaying = !audio.paused && !audio.ended && audio.readyState > 2;
+  if (actuallyPlaying !== isPlaying) {
+    isPlaying = actuallyPlaying;
+    updatePlayPauseUI();
+    if (isPlaying) startProgressLoop(); else stopProgressLoop();
+    if ('mediaSession' in navigator) {
+      try { navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused'; } catch (e) {}
+    }
   }
+  updateSeekUI();
+  updateMediaSessionPositionState();
 }
-document.getElementById('iosInstallDismiss').addEventListener('click', () => {
-  document.getElementById('iosInstallBanner').hidden = true;
-  safeStorage.set('iosInstallDismissed', '1');
-});
 
-/* Chrome/Android install prompt */
-let deferredPrompt;
-window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault();
-  deferredPrompt = e;
-  document.getElementById('btnInstall').hidden = false;
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    syncStateFromAudioElement();
+  } else {
+    savePosition();
+  }
 });
-document.getElementById('btnInstall').addEventListener('click', async () => {
-  if (!deferredPrompt) return;
-  deferredPrompt.prompt();
-  await deferredPrompt.userChoice;
-  deferredPrompt = null;
-  document.getElementById('btnInstall').hidden = true;
-});
+window.addEventListener('pageshow', syncStateFromAudioElement);
+window.addEventListener('focus', syncStateFromAudioElement);
+window.addEventListener('pagehide', savePosition);
 
 /* =========================================================
-   THEME MODAL
+   THEME / STATUS MODAL
    ========================================================= */
 function openSettingsModal(){
-  updateOfflineStatusUI();
+  updateStatusUI();
   document.getElementById('settingsModal').hidden = false;
   document.body.style.overflow = 'hidden';
 }
@@ -1610,17 +1647,17 @@ function restoreSettings(){
 async function init(){
   try {
     applyAccentColor(currentAccent, false);
-    setupIconsAndManifest();
+    generateArtwork();
     registerServiceWorker();
     requestPersistentStorage();
     restoreSettings();
-    checkIOSInstallPrompt();
     updatePlayPauseUI();
-    updateOfflineStatusUI();
+    updateStatusUI();
 
     try {
       db = await openDBWithRetry(3);
       await loadTracksFromDB();
+      restoreLastPosition();
     } catch (err) {
       console.error('IndexedDB init failed after retries:', err);
       showToast('Storage unavailable — tracks added now will only last this session', true);
