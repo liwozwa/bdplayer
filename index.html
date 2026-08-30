@@ -386,6 +386,7 @@ input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:#4d4
 .theme-swatch.active{border-color:#fff;}
 .theme-swatch.active .swatch-check{opacity:1;}
 .theme-name-hint{font-size:11px;color:var(--text-tertiary);margin-top:12px;line-height:1.5;}
+.offline-status{font-size:11px;color:var(--text-tertiary);margin-top:20px;padding-top:16px;border-top:1px solid var(--border);line-height:1.5;}
 
 /* ---------- Responsive ---------- */
 @media (max-width:768px){
@@ -533,6 +534,7 @@ input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:#4d4
           <div class="theme-swatches" id="themeSwatches"></div>
           <p class="theme-name-hint" id="themeNameHint"></p>
         </div>
+        <p class="offline-status" id="offlineStatus"></p>
       </div>
     </div>
   </div>
@@ -593,6 +595,7 @@ let lastVolume = 80;
 let rafId = null;
 let isSeeking = false;
 let audioUnlocked = false;
+let offlineReady = false;
 
 /* =========================================================
    AUDIO ELEMENT
@@ -602,11 +605,7 @@ let audioUnlocked = false;
    fidelity, with zero processing overhead. This is also what
    makes background/lock-screen playback maximally reliable on
    iOS: a plain <audio> element with a proper Media Session is
-   a native, first-class capability, with no suspend/resume
-   pipeline for iOS to interrupt in the first place.
-   Kept in the DOM (hidden) rather than detached — iOS is more
-   consistent about maintaining a background audio session for
-   elements that are part of the render tree.
+   a native, first-class capability.
    ========================================================= */
 const audio = document.createElement('audio');
 audio.preload = 'auto';
@@ -688,6 +687,8 @@ function renderThemeSwatches(){
 
 /* =========================================================
    INDEXEDDB LAYER
+   Entirely local — no network dependency of any kind, so the
+   library loads identically online and offline.
    ========================================================= */
 function openDB(){
   return new Promise((resolve, reject) => {
@@ -840,8 +841,9 @@ function showToast(msg, isError){
 }
 
 /* =========================================================
-   ICON GENERATION (Canvas -> PNG data URIs, used for
-   favicon / apple-touch-icon / manifest / media session artwork)
+   ICON GENERATION (Canvas -> PNG data URIs)
+   Generated locally at runtime — no network fetch, so icons
+   and artwork are available offline on the very first launch.
    ========================================================= */
 let appIconDataUrl192 = '';
 let appIconDataUrl512 = '';
@@ -888,6 +890,10 @@ function setupIconsAndManifest(){
     setLinkTag('icon', icon192);
     setLinkTag('apple-touch-icon', icon180);
 
+    /* Inline manifest as a data: URL — no separate manifest file to
+       fetch, so nothing here can fail when offline. start_url and
+       scope are absolute because relative URLs in a data: manifest
+       have no same-origin base to resolve against. */
     const manifest = {
       name: 'BDPLAYER',
       short_name: 'BDPLAYER',
@@ -903,47 +909,73 @@ function setupIconsAndManifest(){
         { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
       ]
     };
-    const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
-    setLinkTag('manifest', URL.createObjectURL(manifestBlob));
+    setLinkTag('manifest', 'data:application/manifest+json;charset=utf-8,' + encodeURIComponent(JSON.stringify(manifest)));
   } catch (err) {
     console.warn('Icon/manifest setup failed:', err);
   }
 }
 
 /* =========================================================
-   SERVICE WORKER (app-shell caching)
-   Requires a secure context — satisfied automatically on
-   GitHub Pages (https). Offline playback itself never depends
-   on this; it runs entirely through IndexedDB.
+   SERVICE WORKER — the piece that makes offline launches work.
+
+   IMPORTANT: the worker script must be a REAL same-origin file
+   served with a JavaScript MIME type. Blob and data: URLs are
+   rejected by the spec (that is why an earlier blob-based
+   registration silently never took effect and nothing was ever
+   cached). Deploy sw.js next to index.html:
+       https://liwozwa.github.io/bdplayer/sw.js
+   Because all CSS and JS here are inline, sw.js only ever needs
+   to cache this one document for the whole app to work offline.
    ========================================================= */
-function registerServiceWorker(){
-  if (!('serviceWorker' in navigator)) return;
-  if (location.protocol !== 'https:' && location.hostname !== 'localhost') return;
-  const swSource = `
-    const CACHE = 'offline-audio-player-shell-v1';
-    self.addEventListener('install', () => self.skipWaiting());
-    self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
-    self.addEventListener('fetch', (e) => {
-      if (e.request.method !== 'GET') return;
-      e.respondWith(
-        caches.open(CACHE).then(async (cache) => {
-          const cached = await cache.match(e.request);
-          const network = fetch(e.request).then((res) => {
-            if (res && res.ok) cache.put(e.request, res.clone());
-            return res;
-          }).catch(() => cached);
-          return cached || network;
-        })
-      );
-    });
-  `;
-  try {
-    const blob = new Blob([swSource], { type: 'text/javascript' });
-    navigator.serviceWorker.register(URL.createObjectURL(blob))
-      .catch(err => console.warn('SW registration failed (offline playback still works via IndexedDB):', err));
-  } catch (err) {
-    console.warn('Service worker unavailable:', err);
+function updateOfflineStatusUI(){
+  const el = document.getElementById('offlineStatus');
+  if (!el) return;
+  if (!('serviceWorker' in navigator)) {
+    el.textContent = 'Offline mode: not supported by this browser.';
+  } else if (offlineReady || navigator.serviceWorker.controller) {
+    el.textContent = 'Offline mode: ready. The app will open without a connection.';
+  } else {
+    el.textContent = 'Offline mode: setting up. Reload once while online to finish.';
   }
+}
+
+function registerServiceWorker(){
+  if (!('serviceWorker' in navigator)) { updateOfflineStatusUI(); return; }
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost') { updateOfflineStatusUI(); return; }
+
+  navigator.serviceWorker.register('./sw.js', { scope: './' })
+    .then((reg) => {
+      const firstInstall = !navigator.serviceWorker.controller;
+
+      navigator.serviceWorker.ready.then(() => {
+        offlineReady = true;
+        updateOfflineStatusUI();
+        if (firstInstall) showToast('Ready to use offline');
+      });
+
+      reg.addEventListener('updatefound', () => {
+        const incoming = reg.installing;
+        if (!incoming) return;
+        incoming.addEventListener('statechange', () => {
+          if (incoming.state === 'installed' && navigator.serviceWorker.controller) {
+            showToast('Update installed — reopen to apply');
+          }
+        });
+      });
+    })
+    .catch((err) => {
+      console.warn(
+        'Service worker registration failed. The app works online but will NOT open offline. ' +
+        'Confirm sw.js is deployed alongside index.html at the same path.',
+        err
+      );
+      updateOfflineStatusUI();
+    });
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    offlineReady = true;
+    updateOfflineStatusUI();
+  });
 }
 
 async function requestPersistentStorage(){
@@ -1268,12 +1300,6 @@ function updateMediaSession(track){
   } catch (e) {}
   updateMediaSessionPositionState();
 }
-
-/* Keeps the lock-screen / control-center scrubber accurate. Called
-   on discrete events (track load, play, pause, seek) rather than on
-   every animation frame — the OS interpolates position between
-   updates using duration/playbackRate/timestamp, per the Media
-   Session spec. */
 function updateMediaSessionPositionState(){
   if (!('mediaSession' in navigator) || typeof navigator.mediaSession.setPositionState !== 'function') return;
   const dur = audio.duration;
@@ -1300,8 +1326,7 @@ audio.addEventListener('loadedmetadata', () => {
   updateMediaSessionPositionState();
 });
 /* Safety nets: if iOS pauses/resumes the element itself outside of
-   our own playAudio()/pauseAudio() calls (e.g. via a system media
-   control not routed through our own handlers), keep isPlaying, the
+   our own playAudio()/pauseAudio() calls, keep isPlaying, the
    play/pause icon, and mediaSession.playbackState honest. */
 audio.addEventListener('pause', () => {
   if (isPlaying) {
@@ -1490,9 +1515,9 @@ if ('mediaSession' in navigator) {
 /* =========================================================
    iOS AUDIO UNLOCK
    Primes the <audio> element inside the very first real user
-   gesture on the page (touchstart or click), which is what iOS
-   requires before it will reliably honor programmatic audio
-   control later — including from a lock-screen control tap.
+   gesture on the page, which is what iOS requires before it
+   will reliably honor programmatic audio control later —
+   including from a lock-screen control tap.
    ========================================================= */
 function unlockAudio(){
   if (audioUnlocked) return;
@@ -1543,6 +1568,7 @@ document.getElementById('btnInstall').addEventListener('click', async () => {
    THEME MODAL
    ========================================================= */
 function openSettingsModal(){
+  updateOfflineStatusUI();
   document.getElementById('settingsModal').hidden = false;
   document.body.style.overflow = 'hidden';
 }
@@ -1590,6 +1616,7 @@ async function init(){
     restoreSettings();
     checkIOSInstallPrompt();
     updatePlayPauseUI();
+    updateOfflineStatusUI();
 
     try {
       db = await openDBWithRetry(3);
